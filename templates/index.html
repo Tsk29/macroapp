@@ -5,42 +5,121 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nutrition Agent</title>
     <style>
-      body { font-family: Arial, sans-serif; background: #f9fafb; margin: 0; padding: 24px; }
-      .container { max-width: 800px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.08); }
-      input, textarea, button { width: 100%; padding: 12px; margin-top: 12px; border: 1px solid #d1d5db; border-radius: 8px; }
-      button { background: #2563eb; color: #fff; border: none; cursor: pointer; }
-      button:hover { background: #1d4ed8; }
-      .section { margin-top: 24px; }
-      .result { background: #f3f4f6; padding: 18px; border-radius: 10px; margin-top: 18px; }
-      .label { font-weight: 700; margin-bottom: 8px; display: block; }
+      :root {
+        color-scheme: light;
+        font-family: Inter, system-ui, sans-serif;
+        background: #eef2ff;
+        color: #111827;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 0; background: #eef2ff; }
+      .container { max-width: 980px; margin: 32px auto; background: #ffffff; padding: 32px; border-radius: 28px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12); }
+      h1 { margin-top: 0; font-size: 2.7rem; letter-spacing: -0.04em; }
+      .hero-text { margin: 8px 0 24px; color: #4b5563; font-size: 1.05rem; line-height: 1.8; }
+      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+      .full-width { grid-column: 1 / -1; }
+      label { display: block; font-weight: 700; margin-bottom: 10px; color: #111827; }
+      input[type="file"], select, textarea { width: 100%; padding: 16px; border: 1px solid #d1d5db; border-radius: 16px; background: #f8fafc; color: #111827; }
+      textarea { resize: vertical; min-height: 140px; }
+      .primary-button, .secondary-button { width: 100%; padding: 16px; border-radius: 16px; border: none; font-weight: 700; letter-spacing: 0.02em; }
+      .primary-button { background: #4338ca; color: #fff; }
+      .primary-button:hover { background: #3730a3; }
+      .secondary-button { background: #e0e7ff; color: #1e3a8a; margin-top: 12px; }
+      .secondary-button:hover { background: #c7d2fe; }
+      .section { margin-top: 32px; }
+      .result { background: #f8fafc; padding: 28px; border-radius: 24px; border: 1px solid #e5e7eb; }
+      .meta { margin: 0.4rem 0 1rem; color: #4b5563; }
+      .suggestions { display: grid; gap: 16px; }
+      .suggestion-card { padding: 20px; border-radius: 20px; background: #ffffff; border: 1px solid #e5e7eb; transition: transform 0.18s ease, border-color 0.18s ease; }
+      .suggestion-card:hover { transform: translateY(-2px); border-color: #c7d2fe; }
+      .suggestion-card.selected { border-color: #4338ca; background: #eef2ff; }
+      .suggestion-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
+      .badge { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #4338ca; color: white; font-size: 0.95rem; }
+      .recipe-type { display: block; color: #4b5563; margin-top: 4px; font-size: 0.95rem; }
+      .select-recipe { margin-top: 24px; }
+      .recipe-details { margin-top: 32px; padding: 24px; background: #ffffff; border-radius: 20px; border: 1px solid #e5e7eb; }
+      .recipe-details h3 { margin-top: 0; }
+      @media (max-width: 760px) {
+        .form-grid { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>Nutrition Agent</h1>
-      <p>Upload a pantry photo or type your ingredients/prompt below.</p>
-      <form action="/submit" method="post" enctype="multipart/form-data">
-        <label class="label" for="upload">Upload image</label>
-        <input type="file" id="upload" name="upload" accept="image/*" />
+      <p class="hero-text">Upload a pantry photo, click a pantry image, or type your ingredients to generate meal suggestions.</p>
+      <form action="/submit" method="post" enctype="multipart/form-data" class="form-grid">
+        <div>
+          <label class="label" for="upload">Upload image</label>
+          <input type="file" id="upload" name="upload" accept="image/*" />
+        </div>
 
-        <label class="label" for="user_prompt">Type ingredients or ask for a recipe</label>
-        <textarea id="user_prompt" name="user_prompt" rows="4" placeholder="e.g. chicken, rice, broccoli"></textarea>
+        <div>
+          <label class="label" for="mode">Plan type</label>
+          <select id="mode" name="mode">
+            <option value="single_meal" {% if mode == 'single_meal' %}selected{% endif %}>Single meal</option>
+            <option value="full_day" {% if mode == 'full_day' %}selected{% endif %}>Full day</option>
+          </select>
+        </div>
 
-        <button type="submit">Generate</button>
+        <div class="full-width">
+          <label class="label" for="user_prompt">Type ingredients or ask for a recipe</label>
+          <textarea id="user_prompt" name="user_prompt" rows="4" placeholder="e.g. chicken, rice, broccoli">{{ user_prompt }}</textarea>
+        </div>
+
+        <div class="full-width">
+          <button type="submit" class="primary-button">Generate recipes</button>
+        </div>
       </form>
 
       {% if result %}
       <div class="section result">
-        <h2>Result</h2>
-        <p><strong>Input source:</strong> {{ result.input_source }}</p>
-        <p><strong>Recipe:</strong> {{ result.recipe.name if result.recipe else 'None' }}</p>
-        <p><strong>Cuisine:</strong> {{ result.recipe.cuisine if result.recipe else 'N/A' }}</p>
-        <p><strong>Ingredients:</strong> {{ result.recipe.ingredients | join(', ') if result.recipe else 'N/A' }}</p>
-        <p><strong>Instructions:</strong> {{ result.recipe.instructions if result.recipe else 'N/A' }}</p>
-        <p><strong>Total calories:</strong> {{ result.meal_plan.total_calories }}</p>
-        <p><strong>Total protein:</strong> {{ result.meal_plan.total_protein }}</p>
-        <p><strong>Missing ingredients:</strong> {{ result.recipe.missing_ingredients | join(', ') if result.recipe else 'N/A' }}</p>
-        <p><strong>Shopping estimate:</strong> {{ result.shopping_estimate if result.shopping_estimate is not none else 'N/A' }}</p>
+        <h2>Suggested Recipes</h2>
+        <p class="meta"><strong>Input source:</strong> {{ result.input_source }}</p>
+        <p class="meta"><strong>Plan type:</strong> {{ result.mode.replace('_', ' ') }}</p>
+
+        {% if result.suggested_recipes %}
+        <div class="suggestions">
+          {% for recipe in result.suggested_recipes %}
+          <div class="suggestion-card {% if loop.index0 == selected_recipe|int %}selected{% endif %}">
+            <div class="suggestion-header">
+              <span class="badge">{{ loop.index }}</span>
+              <div>
+                <strong>{{ recipe.name }}</strong>
+                <span class="recipe-type">{{ recipe.cuisine }}</span>
+              </div>
+            </div>
+            <p>{{ recipe.instructions }}</p>
+            <p><strong>Calories:</strong> {{ recipe.calories }} &middot; <strong>Protein:</strong> {{ recipe.protein_grams }}</p>
+            <p><strong>Missing:</strong> {{ recipe.missing_ingredients | join(', ') }}</p>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div class="select-recipe">
+          <label class="label" for="selected_recipe">Select recipe to view details</label>
+          <select id="selected_recipe" name="selected_recipe">
+            <option value="">Keep first suggestion</option>
+            {% for recipe in result.suggested_recipes %}
+            <option value="{{ loop.index0 }}" {% if selected_recipe is not none and selected_recipe|int == loop.index0 %}selected{% endif %}>
+              {{ recipe.name }}
+            </option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="secondary-button">Show selected recipe</button>
+        </div>
+        {% endif %}
+
+        <div class="recipe-details">
+          <h3>Selected recipe</h3>
+          <p><strong>{{ result.recipe.name if result.recipe else 'None' }}</strong></p>
+          <p><strong>Cuisine:</strong> {{ result.recipe.cuisine if result.recipe else 'N/A' }}</p>
+          <p><strong>Ingredients:</strong> {{ result.recipe.ingredients | join(', ') if result.recipe else 'N/A' }}</p>
+          <p><strong>Instructions:</strong> {{ result.recipe.instructions if result.recipe else 'N/A' }}</p>
+          <p><strong>Total calories:</strong> {{ result.meal_plan.total_calories }}</p>
+          <p><strong>Total protein:</strong> {{ result.meal_plan.total_protein }}</p>
+          <p><strong>Shopping estimate:</strong> {{ result.shopping_estimate if result.shopping_estimate is not none else 'N/A' }}</p>
+        </div>
       </div>
       {% endif %}
     </div>

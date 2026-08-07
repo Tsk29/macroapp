@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-import os
 import uuid
 from pathlib import Path
+from typing import Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -27,7 +26,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 async def homepage(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "result": None},
+        {"request": request, "result": None, "mode": "single_meal", "user_prompt": "", "selected_recipe": None},
     )
 
 
@@ -35,9 +34,11 @@ async def homepage(request: Request) -> HTMLResponse:
 async def submit(
     request: Request,
     user_prompt: str = Form(""),
+    mode: str = Form("single_meal"),
+    selected_recipe: str = Form(""),
     upload: UploadFile | None = File(None),
 ) -> HTMLResponse:
-    state = AppState(user_prompt=user_prompt)
+    state = AppState(user_prompt=user_prompt, mode=mode)
 
     if upload is not None and upload.filename:
         file_extension = Path(upload.filename).suffix.lower()
@@ -50,11 +51,29 @@ async def submit(
         state.uploaded_image_name = image_name
 
     final_state = await run_workflow(state)
+
+    if selected_recipe.strip() and final_state.suggested_recipes:
+        try:
+            index = int(selected_recipe)
+            if 0 <= index < len(final_state.suggested_recipes):
+                choice = final_state.suggested_recipes[index]
+                final_state.recipe = choice
+                final_state.meal_plan = final_state.meal_plan.copy(update={
+                    "meals": [choice],
+                    "total_calories": choice.calories,
+                    "total_protein": choice.protein_grams,
+                })
+        except ValueError:
+            pass
+
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "result": final_state,
+            "mode": mode,
+            "user_prompt": user_prompt,
+            "selected_recipe": selected_recipe,
         },
     )
 
