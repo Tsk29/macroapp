@@ -1,0 +1,5 @@
+pydantic>=2.0
+langgraph
+python-dotenv
+nest-asyncio
+playwright
