@@ -1,0 +1,46 @@
+'use client';
+
+import { useState } from 'react';
+
+export function useNutritionAgent() {
+  const [isLoading, setIsLoading] = useState(false);
+  const [state, setState] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function generateRecipe(payload: {
+    user_prompt: string;
+    mode: 'single_meal' | 'full_day';
+    meal_type: string;
+    cuisine_preferences: string[];
+  }) {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/submit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Failed to generate recipe');
+      }
+
+      const data = await response.json();
+      setState(data);
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+      console.error(err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return { state, isLoading, error, generateRecipe };
+}

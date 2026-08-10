@@ -40,15 +40,15 @@ def build_graph() -> StateGraph:
     return graph
 
 
-async def run_workflow() -> AppState:
-    state = AppState(user_prompt="Generate a high-protein meal with Italian flavors.")
+async def run_workflow(state: AppState) -> AppState:
     graph = build_graph()
     final_state = await graph.execute(state)
     return final_state
 
 
 async def main() -> None:
-    final_state = await run_workflow()
+    state = AppState(user_prompt="Generate a high-protein meal with Italian flavors.")
+    final_state = await run_workflow(state)
 
     print("Workflow completed.")
     print("Recipe:", final_state.recipe.name if final_state.recipe else "none")

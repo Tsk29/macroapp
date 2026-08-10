@@ -6,98 +6,455 @@
     <title>Nutrition Agent</title>
     <style>
       :root {
-        color-scheme: light;
-        font-family: Inter, system-ui, sans-serif;
-        background: #eef2ff;
-        color: #111827;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #0f172a;
+        background: radial-gradient(circle at top, rgba(99, 102, 241, 0.18), transparent 30%), linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
       }
-      * { box-sizing: border-box; }
-      body { margin: 0; padding: 0; background: #eef2ff; }
-      .container { max-width: 980px; margin: 32px auto; background: #ffffff; padding: 32px; border-radius: 28px; box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12); }
-      h1 { margin-top: 0; font-size: 2.7rem; letter-spacing: -0.04em; }
-      .hero-text { margin: 8px 0 24px; color: #4b5563; font-size: 1.05rem; line-height: 1.8; }
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-      .full-width { grid-column: 1 / -1; }
-      label { display: block; font-weight: 700; margin-bottom: 10px; color: #111827; }
-      input[type="file"], select, textarea { width: 100%; padding: 16px; border: 1px solid #d1d5db; border-radius: 16px; background: #f8fafc; color: #111827; }
-      textarea { resize: vertical; min-height: 140px; }
-      .primary-button, .secondary-button { width: 100%; padding: 16px; border-radius: 16px; border: none; font-weight: 700; letter-spacing: 0.02em; }
-      .primary-button { background: #4338ca; color: #fff; }
-      .primary-button:hover { background: #3730a3; }
-      .secondary-button { background: #e0e7ff; color: #1e3a8a; margin-top: 12px; }
-      .secondary-button:hover { background: #c7d2fe; }
-      .section { margin-top: 32px; }
-      .result { background: #f8fafc; padding: 28px; border-radius: 24px; border: 1px solid #e5e7eb; }
-      .meta { margin: 0.4rem 0 1rem; color: #4b5563; }
-      .suggestions { display: grid; gap: 16px; }
-      .suggestion-card { padding: 20px; border-radius: 20px; background: #ffffff; border: 1px solid #e5e7eb; transition: transform 0.18s ease, border-color 0.18s ease; }
-      .suggestion-card:hover { transform: translateY(-2px); border-color: #c7d2fe; }
-      .suggestion-card.selected { border-color: #4338ca; background: #eef2ff; }
-      .suggestion-header { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; }
-      .badge { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; background: #4338ca; color: white; font-size: 0.95rem; }
-      .recipe-type { display: block; color: #4b5563; margin-top: 4px; font-size: 0.95rem; }
-      .select-recipe { margin-top: 24px; }
-      .recipe-details { margin-top: 32px; padding: 24px; background: #ffffff; border-radius: 20px; border: 1px solid #e5e7eb; }
-      .recipe-details h3 { margin-top: 0; }
-      @media (max-width: 760px) {
-        .form-grid { grid-template-columns: 1fr; }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: transparent;
+      }
+
+      .page-shell {
+        width: min(1240px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 32px 0 64px;
+      }
+
+      .topbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 32px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .brand-logo {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #4338ca 0%, #7c3aed 100%);
+        color: white;
+        font-weight: 800;
+        font-size: 1.1rem;
+      }
+
+      .brand-name {
+        font-size: 1.4rem;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+      }
+
+      .brand-tag {
+        color: #4b5563;
+        font-size: 0.95rem;
+      }
+
+      .hero {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 28px;
+        box-shadow: 0 28px 80px rgba(15, 23, 42, 0.12);
+        padding: 40px;
+        margin-bottom: 32px;
+      }
+
+      .hero h1 {
+        margin: 0 0 16px;
+        font-size: clamp(2.4rem, 4vw, 3.4rem);
+        line-height: 1.05;
+      }
+
+      .hero p {
+        margin: 0;
+        max-width: 760px;
+        color: #475569;
+        font-size: 1.05rem;
+        line-height: 1.8;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr;
+        gap: 24px;
+      }
+
+      .panel {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 28px;
+        padding: 28px;
+        box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08);
+      }
+
+      .panel h2 {
+        margin: 0 0 18px;
+        font-size: 1.55rem;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 10px;
+        font-weight: 700;
+        color: #0f172a;
+      }
+
+      input[type="file"], select, textarea {
+        width: 100%;
+        min-height: 52px;
+        padding: 14px 16px;
+        border: 1px solid #cbd5e1;
+        border-radius: 16px;
+        background: #f8fafc;
+        color: #0f172a;
+        font-size: 0.98rem;
+      }
+
+      textarea {
+        min-height: 140px;
+        resize: vertical;
+      }
+
+      .input-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+      }
+
+      .input-row .field {
+        display: grid;
+        gap: 10px;
+      }
+
+      .control-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .cuisine-checkbox {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        position: relative;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        padding: 10px 16px;
+        background: #f8fafc;
+        color: #334155;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+      }
+
+      .pill.checked,
+      .pill input:checked + span {
+        background: #eef2ff;
+        border-color: #c7d2fe;
+        color: #312e81;
+      }
+
+      .pill.active {
+        background: #eef2ff;
+        border-color: #c7d2fe;
+        color: #312e81;
+      }
+
+      .button-row {
+        display: grid;
+        gap: 12px;
+      }
+
+      .button {
+        width: 100%;
+        border: none;
+        border-radius: 16px;
+        padding: 16px 20px;
+        font-weight: 700;
+        font-size: 1rem;
+        cursor: pointer;
+      }
+
+      .button-primary {
+        background: linear-gradient(135deg, #4338ca 0%, #6366f1 100%);
+        color: white;
+      }
+
+      .button-secondary {
+        background: #f8fafc;
+        color: #1f2937;
+        border: 1px solid #cbd5e1;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+      }
+
+      .metric-card {
+        background: #f8fafc;
+        border-radius: 20px;
+        border: 1px solid #e2e8f0;
+        padding: 20px;
+      }
+
+      .metric-card h3 {
+        margin: 0 0 10px;
+        font-size: 0.95rem;
+        color: #475569;
+        font-weight: 700;
+      }
+
+      .metric-card p {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #0f172a;
+      }
+
+      .suggestions {
+        display: grid;
+        gap: 18px;
+        margin-top: 20px;
+      }
+
+      .suggestion-card {
+        border-radius: 24px;
+        background: white;
+        border: 1px solid #e2e8f0;
+        padding: 22px;
+        box-shadow: 0 16px 36px rgba(15, 23, 42, 0.06);
+      }
+
+      .suggestion-card.selected {
+        border-color: #4338ca;
+        background: #eef2ff;
+      }
+
+      .suggestion-card h3 {
+        margin: 0 0 10px;
+        font-size: 1.2rem;
+      }
+
+      .suggestion-meta {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+
+      .chip {
+        border-radius: 999px;
+        padding: 8px 14px;
+        background: #eef2ff;
+        color: #4338ca;
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+
+      .recipe-details {
+        margin-top: 28px;
+        padding: 28px;
+        border-radius: 24px;
+        background: white;
+        border: 1px solid #e2e8f0;
+      }
+
+      .recipe-details h3 {
+        margin-top: 0;
+        font-size: 1.4rem;
+      }
+
+      .recipe-detail-list {
+        margin: 16px 0 0;
+        padding-left: 18px;
+      }
+
+      .recipe-detail-list li {
+        margin-bottom: 10px;
+        line-height: 1.7;
+      }
+
+      .recipe-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 18px;
+      }
+
+      .recipe-stat {
+        border-radius: 18px;
+        background: #f8fafc;
+        padding: 18px;
+        border: 1px solid #e2e8f0;
+      }
+
+      .recipe-stat strong {
+        display: block;
+        color: #475569;
+        margin-bottom: 8px;
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 980px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-grid {
+          grid-template-columns: 1fr;
+        }
       }
     </style>
   </head>
   <body>
-    <div class="container">
-      <h1>Nutrition Agent</h1>
-      <p class="hero-text">Upload a pantry photo, click a pantry image, or type your ingredients to generate meal suggestions.</p>
-      <form action="/submit" method="post" enctype="multipart/form-data" class="form-grid">
-        <div>
-          <label class="label" for="upload">Upload image</label>
-          <input type="file" id="upload" name="upload" accept="image/*" />
+    <div class="page-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-logo">N</div>
+          <div>
+            <div class="brand-name">Nutrition Agent</div>
+            <div class="brand-tag">Fitness-style recipe planning & pantry powered meal ideas</div>
+          </div>
         </div>
+      </header>
 
-        <div>
-          <label class="label" for="mode">Plan type</label>
-          <select id="mode" name="mode">
-            <option value="single_meal" {% if mode == 'single_meal' %}selected{% endif %}>Single meal</option>
-            <option value="full_day" {% if mode == 'full_day' %}selected{% endif %}>Full day</option>
-          </select>
-        </div>
+      <section class="hero">
+        <h1>Generate healthy meals with detailed recipes from your ingredients.</h1>
+        <p>Type your ingredients, choose a meal type and cuisine, then generate a pro-style recipe with nutrition details, shopping guidance, and cooking instructions.</p>
+      </section>
 
-        <div class="full-width">
-          <label class="label" for="user_prompt">Type ingredients or ask for a recipe</label>
-          <textarea id="user_prompt" name="user_prompt" rows="4" placeholder="e.g. chicken, rice, broccoli">{{ user_prompt }}</textarea>
-        </div>
+      <div class="grid">
+        <section class="panel">
+          <h2>Build your plan</h2>
+          <form action="/submit" method="post" enctype="multipart/form-data">
+            <div class="input-row">
+              <div class="field">
+                <label for="mode">Plan type</label>
+                <select id="mode" name="mode">
+                <option value="single_meal" {% if mode == 'single_meal' %}selected{% endif %}>Single meal</option>
+                <option value="full_day" {% if mode == 'full_day' %}selected{% endif %}>Full day</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="meal_type">Meal type</label>
+              <select id="meal_type" name="meal_type">
+                {% for meal_option in ["Breakfast", "Lunch", "Dinner", "Snack"] %}
+                <option value="{{ meal_option }}" {% if meal_type == meal_option %}selected{% endif %}>{{ meal_option }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
 
-        <div class="full-width">
-          <button type="submit" class="primary-button">Generate recipes</button>
-        </div>
-      </form>
+          <div class="field">
+            <label for="user_prompt">Enter ingredients</label>
+            <textarea id="user_prompt" name="user_prompt" placeholder="e.g. chicken, rice, broccoli, spinach">{{ user_prompt }}</textarea>
+          </div>
+
+          <div class="field">
+            <label>Cuisine preferences</label>
+            <div class="control-group">
+              {% for cuisine in ["Mediterranean", "Italian", "Mexican", "Asian", "American", "Greek", "Vegetarian"] %}
+              <label class="pill {% if cuisine in cuisine_preferences %}checked{% endif %}">
+                <input class="cuisine-checkbox" type="checkbox" name="cuisine_preferences" value="{{ cuisine }}" {% if cuisine in cuisine_preferences %}checked{% endif %} />
+                <span>{{ cuisine }}</span>
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="upload">Upload pantry photo</label>
+            <input type="file" id="upload" name="upload" accept="image/*" />
+          </div>
+
+          <div class="button-row">
+            <button type="submit" class="button button-primary">Generate recipe</button>
+            <button type="submit" class="button button-secondary">Refresh suggestions</button>
+          </div>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h2>Quick summary</h2>
+          <div class="metric-card">
+            <h3>Selected meal</h3>
+            <p>{{ meal_type or 'Any' }}</p>
+          </div>
+          <div class="metric-card">
+            <h3>Selected cuisines</h3>
+            <p>{{ cuisine_preferences | join(', ') if cuisine_preferences else 'Any' }}</p>
+          </div>
+          <div class="metric-card">
+            <h3>Recipe source</h3>
+            <p>{{ result.input_source if result else 'Text input' }}</p>
+          </div>
+
+          {% if result and result.shopping_estimate is not none %}
+          <div class="metric-card" style="grid-column: span 1;">
+            <h3>Estimated shopping</h3>
+            <p>${{ '%.2f' | format(result.shopping_estimate) }}</p>
+          </div>
+          {% endif %}
+        </section>
+      </div>
 
       {% if result %}
-      <div class="section result">
-        <h2>Suggested Recipes</h2>
-        <p class="meta"><strong>Input source:</strong> {{ result.input_source }}</p>
-        <p class="meta"><strong>Plan type:</strong> {{ result.mode.replace('_', ' ') }}</p>
-
-        {% if result.suggested_recipes %}
+      <section class="panel" style="margin-top: 24px;">
+        <h2>Suggested recipes</h2>
         <div class="suggestions">
           {% for recipe in result.suggested_recipes %}
-          <div class="suggestion-card {% if loop.index0 == selected_recipe|int %}selected{% endif %}">
-            <div class="suggestion-header">
-              <span class="badge">{{ loop.index }}</span>
-              <div>
-                <strong>{{ recipe.name }}</strong>
-                <span class="recipe-type">{{ recipe.cuisine }}</span>
+          <div class="suggestion-card {% if selected_recipe and selected_recipe|int == loop.index0 %}selected{% endif %}">
+            <div class="suggestion-meta">
+              <span class="chip">#{{ loop.index }}</span>
+              <span class="chip">{{ recipe.meal_type or 'Meal' }}</span>
+              <span class="chip">{{ recipe.cuisine }}</span>
+            </div>
+            <h3>{{ recipe.name }}</h3>
+            <p>{{ recipe.instructions }}</p>
+            <div class="recipe-stats">
+              <div class="recipe-stat">
+                <strong>Calories</strong>
+                {{ recipe.calories }} kcal
+              </div>
+              <div class="recipe-stat">
+                <strong>Protein</strong>
+                {{ recipe.protein_grams }} g
               </div>
             </div>
-            <p>{{ recipe.instructions }}</p>
-            <p><strong>Calories:</strong> {{ recipe.calories }} &middot; <strong>Protein:</strong> {{ recipe.protein_grams }}</p>
-            <p><strong>Missing:</strong> {{ recipe.missing_ingredients | join(', ') }}</p>
+            <p style="margin-top: 14px; color: #475569;"><strong>Missing ingredients:</strong> {{ recipe.missing_ingredients | join(', ') }}</p>
           </div>
           {% endfor %}
         </div>
 
-        <div class="select-recipe">
-          <label class="label" for="selected_recipe">Select recipe to view details</label>
+        <div class="field" style="margin-top: 28px;">
+          <label for="selected_recipe">Select recipe to view detailed instructions</label>
           <select id="selected_recipe" name="selected_recipe">
             <option value="">Keep first suggestion</option>
             {% for recipe in result.suggested_recipes %}
@@ -106,21 +463,40 @@
             </option>
             {% endfor %}
           </select>
-          <button type="submit" class="secondary-button">Show selected recipe</button>
         </div>
-        {% endif %}
+      </section>
 
+      <section class="panel">
         <div class="recipe-details">
-          <h3>Selected recipe</h3>
-          <p><strong>{{ result.recipe.name if result.recipe else 'None' }}</strong></p>
+          <h3>Recipe details</h3>
+          <p><strong>{{ result.recipe.name if result.recipe else 'No recipe selected yet' }}</strong></p>
           <p><strong>Cuisine:</strong> {{ result.recipe.cuisine if result.recipe else 'N/A' }}</p>
-          <p><strong>Ingredients:</strong> {{ result.recipe.ingredients | join(', ') if result.recipe else 'N/A' }}</p>
-          <p><strong>Instructions:</strong> {{ result.recipe.instructions if result.recipe else 'N/A' }}</p>
-          <p><strong>Total calories:</strong> {{ result.meal_plan.total_calories }}</p>
-          <p><strong>Total protein:</strong> {{ result.meal_plan.total_protein }}</p>
-          <p><strong>Shopping estimate:</strong> {{ result.shopping_estimate if result.shopping_estimate is not none else 'N/A' }}</p>
+          <h4>Ingredients</h4>
+          <ul class="recipe-detail-list">
+            {% if result.recipe %}
+              {% for ingredient in result.recipe.ingredients %}
+              <li>{{ ingredient }}</li>
+              {% endfor %}
+            {% else %}
+              <li>No ingredients available.</li>
+            {% endif %}
+          </ul>
+
+          <h4>Instructions</h4>
+          <p style="margin-top: 0; line-height: 1.8; color: #334155;">{{ result.recipe.instructions if result.recipe else 'N/A' }}</p>
+
+          <div class="recipe-stats" style="margin-top: 24px;">
+            <div class="recipe-stat">
+              <strong>Total calories</strong>
+              {{ result.meal_plan.total_calories }} kcal
+            </div>
+            <div class="recipe-stat">
+              <strong>Total protein</strong>
+              {{ result.meal_plan.total_protein }} g
+            </div>
+          </div>
         </div>
-      </div>
+      </section>
       {% endif %}
     </div>
   </body>

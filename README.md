@@ -21,9 +21,19 @@ pip install -r requirements.txt
 
 ## Usage
 
+Run the command-line workflow:
+
 ```bash
 python main.py
 ```
+
+Run the web app locally:
+
+```bash
+uvicorn app:app --reload
+```
+
+Open `http://127.0.0.1:8000` in your browser.
 
 ## Notes
 
