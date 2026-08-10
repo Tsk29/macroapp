@@ -16,11 +16,18 @@ const allCuisines = [
 const initialRecipe = null;
 
 export default function Home() {
-  type IngredientInput = { name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
+  type IngredientInput = { id: string; name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
 
-  const [ingredients, setIngredients] = useState<IngredientInput[]>([
-    { name: '', amount: 0, unit: 'g' },
-  ]);
+  const createIngredient = () => ({
+    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `ingredient-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: '',
+    amount: 0,
+    unit: 'g' as const,
+  });
+
+  const [ingredients, setIngredients] = useState<IngredientInput[]>(() => [createIngredient()]);
   const [mode, setMode] = useState<'single_meal' | 'full_day'>('single_meal');
   const [mealType, setMealType] = useState('Lunch');
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>(['Mediterranean']);
@@ -30,7 +37,15 @@ export default function Home() {
   const [targetFat, setTargetFat] = useState(60);
   const { state, isLoading, error, generateRecipe } = useNutritionAgent();
 
-  const recipe = useMemo(() => state?.generated_recipe ?? undefined, [state]);
+  const meals = useMemo(() => {
+    if (mode === 'full_day') {
+      return state?.meal_plan?.meals ?? [];
+    }
+
+    return state?.generated_recipe ? [state.generated_recipe] : [];
+  }, [mode, state]);
+
+  const recipe = useMemo(() => meals[0] ?? undefined, [meals]);
 
   const receipt = useMemo(
     () => {
@@ -131,10 +146,33 @@ export default function Home() {
 
               <div className="mt-8 grid gap-4">
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
+                  <label className="text-sm font-semibold text-slate-300">Planning scope</label>
+                  <div className="inline-flex overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 text-sm text-slate-300 shadow-inner">
+                    {[
+                      { label: 'Single Meal', value: 'single_meal' },
+                      { label: 'Full Day', value: 'full_day' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setMode(option.value as 'single_meal' | 'full_day')}
+                        className={`px-4 py-3 transition ${
+                          mode === option.value
+                            ? 'bg-cyan-400 text-slate-950'
+                            : 'bg-transparent text-slate-300 hover:bg-slate-800/80'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
                   <label className="text-sm font-semibold text-slate-300">Ingredients</label>
                   <div className="space-y-3">
                     {ingredients.map((item, index) => (
-                      <div key={`${item.name}-${index}`} className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-slate-900/80 p-3">
+                      <div key={item.id} className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-slate-900/80 p-3">
                         <input
                           value={item.name}
                           onChange={(event) => {
@@ -169,7 +207,6 @@ export default function Home() {
                         >
                           <option value="g">g</option>
                           <option value="ml">ml</option>
-                          <option value="oz">oz</option>
                           <option value="whole">whole</option>
                         </select>
 
@@ -186,7 +223,7 @@ export default function Home() {
                     ))}
                     <button
                       type="button"
-                      onClick={() => setIngredients((current) => [...current, { name: '', amount: 0, unit: 'g' }])}
+                      onClick={() => setIngredients((current) => [...current, createIngredient()])}
                       className="inline-flex items-center justify-center rounded-3xl bg-slate-800/90 px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-slate-700/80"
                     >
                       + Add Ingredient
@@ -225,6 +262,22 @@ export default function Home() {
                     })}
                   </div>
                 </div>
+
+                {mode === 'single_meal' ? (
+                  <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+                    <label className="text-sm font-semibold text-slate-300">Meal type</label>
+                    <select
+                      value={mealType}
+                      onChange={(event) => setMealType(event.target.value)}
+                      className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
+                    >
+                      <option value="Breakfast">Breakfast</option>
+                      <option value="Lunch">Lunch</option>
+                      <option value="Dinner">Dinner</option>
+                      <option value="Snack">Snack</option>
+                    </select>
+                  </div>
+                ) : null}
 
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
                   <label className="text-sm font-semibold text-slate-300">Macro targets</label>
@@ -318,50 +371,103 @@ export default function Home() {
           <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">The Recipe</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">{recipe?.name ?? 'No recipe generated yet'}</h2>
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">
+                  {mode === 'full_day'
+                    ? `Full day plan${meals?.length ? ` — ${meals.length} meals` : ''}`
+                    : recipe?.name ?? 'No recipe generated yet'}
+                </h2>
               </div>
               <div className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">High protein</div>
             </div>
 
-            <div className="mt-8 grid gap-5 sm:grid-cols-[1.1fr_0.9fr]">
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
-                <ul className="mt-5 space-y-3 text-slate-200">
-                  {(recipe?.ingredients ?? []).map((ingredient: any, index: number) => (
-                    <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
-                      <div className="flex items-center justify-between gap-4">
-                        <span>{ingredient.name}</span>
-                        <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
+            {mode === 'full_day' ? (
+              <div className="mt-8 space-y-6">
+                {meals.length ? (
+                  meals.map((meal: any) => (
+                    <div key={`${meal.meal_type}-${meal.name}`} className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">{meal.meal_type}</h3>
+                          <p className="mt-2 text-xl font-semibold text-white">{meal.title || meal.name}</p>
+                        </div>
+                        <div className="rounded-3xl bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
+                          {meal.macro_fit.calories_achieved} kcal • {meal.macro_fit.protein_achieved}g P
+                        </div>
                       </div>
-                    </li>
-                  ))}
-                  {!recipe?.ingredients?.length ? (
-                    <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-3 text-slate-500">
-                      Add ingredients and generate to see the recipe details.
-                    </li>
-                  ) : null}
-                </ul>
+                      <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+                        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
+                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
+                          <ul className="mt-4 space-y-3 text-slate-200">
+                            {(meal.ingredients ?? []).map((ingredient: any, index: number) => (
+                              <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
+                                <div className="flex items-center justify-between gap-4">
+                                  <span>{ingredient.name}</span>
+                                  <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
+                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
+                          <ol className="mt-4 space-y-3 text-slate-200">
+                            {(meal.instructions ?? []).map((step: string, index: number) => (
+                              <li key={`${meal.meal_type}-${index}`} className="rounded-3xl border border-white/10 bg-slate-950/80 p-4">
+                                <span className="font-semibold text-slate-100">Step {index + 1}:</span> <span>{step}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 p-6 text-slate-500">
+                    Generate a full-day meal plan to see each meal breakdown.
+                  </div>
+                )}
               </div>
-
-              <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
-                <ol className="mt-5 space-y-4 text-slate-200">
-                  {recipeInstructions.length ? (
-                    recipeInstructions.map((step: string, index: number) => (
-                      <li key={`${step}-${index}`} className="flex gap-4 rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-slate-100">{index + 1}</span>
-                        <p>{step}</p>
+            ) : (
+              <div className="mt-8 grid gap-5 sm:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                  <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
+                  <ul className="mt-5 space-y-3 text-slate-200">
+                    {(recipe?.ingredients ?? []).map((ingredient: any, index: number) => (
+                      <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
+                        <div className="flex items-center justify-between gap-4">
+                          <span>{ingredient.name}</span>
+                          <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
+                        </div>
                       </li>
-                    ))
-                  ) : (
-                    <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-4 text-slate-500">
-                      Generate a recipe to see step-by-step instructions.
-                    </li>
-                  )}
-                </ol>
+                    ))}
+                    {!recipe?.ingredients?.length ? (
+                      <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-3 text-slate-500">
+                        Add ingredients and generate to see the recipe details.
+                      </li>
+                    ) : null}
+                  </ul>
+                </div>
+
+                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                  <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
+                  <ol className="mt-5 space-y-4 text-slate-200">
+                    {recipeInstructions.length ? (
+                      recipeInstructions.map((step: string, index: number) => (
+                        <li key={`${step}-${index}`} className="flex gap-4 rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-slate-100">{index + 1}</span>
+                          <p>{step}</p>
+                        </li>
+                      ))
+                    ) : (
+                      <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-4 text-slate-500">
+                        Generate a recipe to see step-by-step instructions.
+                      </li>
+                    )}
+                  </ol>
+                </div>
               </div>
-            </div>
+            )}
           </section>
         </div>
 

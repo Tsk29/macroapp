@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class IngredientInput(BaseModel):
+    id: str | None = None
     name: str
     amount: float
     unit: Literal["g", "ml", "whole"]
@@ -50,6 +51,8 @@ class MealPlan(BaseModel):
     meals: list[Recipe] = Field(default_factory=list)
     total_calories: int = 0
     total_protein: int = 0
+    total_carbs: int = 0
+    total_fat: int = 0
 
 
 class ScraperItem(BaseModel):

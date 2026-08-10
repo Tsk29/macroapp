@@ -25,8 +25,12 @@ MACRO_ESTIMATES: dict[str, dict[str, float]] = {
 }
 
 
+def normalize_name(name: str) -> str:
+    return name.strip().lower()
+
+
 def estimate_macros(ingredient: IngredientInput) -> dict[str, int]:
-    normalized = ingredient.name.strip().lower()
+    normalized = normalize_name(ingredient.name)
     amount = ingredient.amount
     if ingredient.unit == "whole":
         amount *= 100
@@ -246,6 +250,154 @@ def build_full_day_plan(state: AppState, recipes: list[Recipe]) -> tuple[list[Re
     return meals, meals[0]
 
 
+def create_realistic_instructions(ingredients: list[IngredientInput], meal_type: str) -> list[str]:
+    steps = []
+    if meal_type == "Breakfast":
+        steps = [
+            "Preheat a non-stick skillet over medium heat and add a splash of olive oil.",
+            "Sear the main protein and sauté tender greens until they are wilted and glossy.",
+            "Finish with seasoning, gently fold the ingredients together, and plate with a squeeze of lemon.",
+        ]
+    elif meal_type == "Snack":
+        steps = [
+            "Combine small protein-rich items and fresh vegetables in a bowl.",
+            "Toss gently with a light dressing and let the flavors meld for 2-3 minutes.",
+            "Serve immediately as a nutrient-dense snack."
+        ]
+    else:
+        steps = [
+            "Preheat a large skillet over medium-high heat and add olive oil.",
+            "Season the protein, sear until golden, then add vegetables and sauté until tender.",
+            "Simmer with sauce ingredients, adjust seasoning, and finish with fresh herbs before plating.",
+        ]
+
+    if ingredients:
+        steps.insert(0, f"Gather the following ingredients: {', '.join({normalize_name(i.name) for i in ingredients if i.name.strip()})}.")
+    return steps
+
+
+def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]) -> Recipe:
+    achieved = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    for ingredient in recipe.ingredients:
+        macros = estimate_macros(ingredient)
+        achieved["calories"] += macros["calories"]
+        achieved["protein"] += macros["protein"]
+        achieved["carbs"] += macros["carbs"]
+        achieved["fat"] += macros["fat"]
+
+    required = {
+        "calories": int(state.target_calories * 0.9),
+        "protein": int(state.target_protein * 0.9),
+        "carbs": int(state.target_carbs * 0.9),
+        "fat": int(state.target_fat * 0.9),
+    }
+
+    candidate_supplements = [
+        IngredientInput(name="olive oil", amount=15, unit="g"),
+        IngredientInput(name="black beans", amount=120, unit="g"),
+        IngredientInput(name="avocado", amount=80, unit="g"),
+        IngredientInput(name="brown rice", amount=100, unit="g"),
+        IngredientInput(name="quinoa", amount=80, unit="g"),
+        IngredientInput(name="egg", amount=2, unit="whole"),
+    ]
+
+    present_names = {normalize_name(i.name) for i in recipe.ingredients}
+    for supplement in candidate_supplements:
+        if all(achieved[key] >= required[key] for key in required):
+            break
+        name = normalize_name(supplement.name)
+        if name in present_names:
+            continue
+
+        prev_achieved = achieved.copy()
+        for key, value in estimate_macros(supplement).items():
+            achieved[key] += value
+
+        if any(achieved[key] > prev_achieved[key] for key in required):
+            recipe.ingredients.append(supplement)
+            present_names.add(name)
+
+    recipe.macro_fit = build_macro_fit(state, achieved)
+    recipe.missing_ingredients = [
+        ingredient.name
+        for ingredient in recipe.ingredients
+        if normalize_name(ingredient.name) not in inventory and normalize_name(ingredient.name) != "water"
+    ]
+    return recipe
+
+
+def split_full_day_plan(state: AppState, base_recipe: Recipe, missing: list[str]) -> tuple[list[Recipe], list[str]]:
+    breakfast = Recipe(
+        title="Hearty Protein Breakfast",
+        cuisine=base_recipe.cuisine,
+        meal_type="Breakfast",
+        prep_time_mins=15,
+        ingredients=[
+            IngredientInput(name="egg", amount=3, unit="whole"),
+            IngredientInput(name="spinach", amount=40, unit="g"),
+            IngredientInput(name="olive oil", amount=10, unit="g"),
+        ],
+        instructions=create_realistic_instructions([], "Breakfast"),
+    )
+
+    lunch = Recipe(
+        title="Macro Bridge Lunch Bowl",
+        cuisine=base_recipe.cuisine,
+        meal_type="Lunch",
+        prep_time_mins=25,
+        ingredients=[*base_recipe.ingredients],
+        instructions=create_realistic_instructions(base_recipe.ingredients, "Lunch"),
+    )
+
+    dinner = Recipe(
+        title="Balanced Dinner Plate",
+        cuisine=base_recipe.cuisine,
+        meal_type="Dinner",
+        prep_time_mins=25,
+        ingredients=[
+            IngredientInput(name="chicken breast", amount=150, unit="g"),
+            IngredientInput(name="brown rice", amount=100, unit="g"),
+            IngredientInput(name="broccoli", amount=120, unit="g"),
+            IngredientInput(name="olive oil", amount=15, unit="g"),
+        ],
+        instructions=create_realistic_instructions([], "Dinner"),
+    )
+
+    snack = Recipe(
+        title="Protein Snack Bowl",
+        cuisine=base_recipe.cuisine,
+        meal_type="Snack",
+        prep_time_mins=10,
+        ingredients=[
+            IngredientInput(name="black beans", amount=120, unit="g"),
+            IngredientInput(name="avocado", amount=80, unit="g"),
+            IngredientInput(name="salsa", amount=80, unit="g"),
+        ],
+        instructions=create_realistic_instructions([], "Snack"),
+    )
+
+    meals = [breakfast, lunch, dinner, snack]
+    daily_missing = []
+    base_set = {normalize_name(i.name) for i in base_recipe.ingredients if i.name.strip()}
+
+    for meal in meals:
+        achieved = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+        for ingredient in meal.ingredients:
+            macros = estimate_macros(ingredient)
+            achieved["calories"] += macros["calories"]
+            achieved["protein"] += macros["protein"]
+            achieved["carbs"] += macros["carbs"]
+            achieved["fat"] += macros["fat"]
+        meal.macro_fit = build_macro_fit(state, achieved)
+
+        for ingredient in meal.ingredients:
+            normalized = normalize_name(ingredient.name)
+            if normalized not in base_set and normalized != "water":
+                daily_missing.append(ingredient.name)
+
+    return meals, sorted(set(daily_missing + missing))
+
+
 def choose_suggested_recipes(state: AppState, recipes: list[Recipe]) -> list[Recipe]:
     candidates = recipes
     if state.mode == "single_meal" and state.meal_type:
@@ -324,10 +476,7 @@ async def chef_node(state: AppState) -> AppState:
             cuisine=state.cuisine_preference[0] if state.cuisine_preference else "Custom",
             meal_type=state.meal_type or "Lunch",
             ingredients=[ingredient for ingredient in state.ingredients],
-            instructions=[
-                *(f"Prepare {ingredient.amount} {ingredient.unit} of {ingredient.name}." for ingredient in state.ingredients),
-                "Combine the ingredients and serve immediately.",
-            ],
+            instructions=create_realistic_instructions(state.ingredients, state.meal_type or "Lunch"),
             macro_fit=build_macro_fit(state, achieved),
             missing_ingredients=[
                 ingredient.name
@@ -335,38 +484,74 @@ async def chef_node(state: AppState) -> AppState:
                 if ingredient.name.strip().lower() not in inventory and ingredient.name.strip().lower() != "water"
             ],
         )
-        state.suggested_recipes = [custom_recipe]
-        state.generated_recipe = custom_recipe
-        state.recipe = custom_recipe
-        state.meal_plan = MealPlan(
-            meals=[custom_recipe],
-            total_calories=custom_recipe.macro_fit.calories_achieved,
-            total_protein=custom_recipe.macro_fit.protein_achieved,
-        )
-        state.missing_ingredients = custom_recipe.missing_ingredients.copy()
+        custom_recipe = bridge_macro_gaps(state, custom_recipe, inventory)
+
+        if state.mode == "full_day":
+            meals, daily_missing = split_full_day_plan(state, custom_recipe, custom_recipe.missing_ingredients)
+            state.suggested_recipes = meals
+            state.generated_recipe = meals[0] if meals else custom_recipe
+            state.recipe = meals[0] if meals else custom_recipe
+            state.meal_plan = MealPlan(
+                meals=meals,
+                total_calories=sum(meal.macro_fit.calories_achieved for meal in meals),
+                total_protein=sum(meal.macro_fit.protein_achieved for meal in meals),
+                total_carbs=sum(meal.macro_fit.carbs_achieved for meal in meals),
+                total_fat=sum(meal.macro_fit.fat_achieved for meal in meals),
+            )
+            state.missing_ingredients = daily_missing
+        else:
+            state.suggested_recipes = [custom_recipe]
+            state.generated_recipe = custom_recipe
+            state.recipe = custom_recipe
+            state.meal_plan = MealPlan(
+                meals=[custom_recipe],
+                total_calories=custom_recipe.macro_fit.calories_achieved,
+                total_protein=custom_recipe.macro_fit.protein_achieved,
+                total_carbs=custom_recipe.macro_fit.carbs_achieved,
+                total_fat=custom_recipe.macro_fit.fat_achieved,
+            )
+            state.missing_ingredients = custom_recipe.missing_ingredients.copy()
     else:
         available = filter_by_cuisine(RECIPE_BANK, state.cuisine_preference)
         available = [recipe for recipe in available if recipe_matches_inventory(recipe, state.available_inventory)]
         available = apply_anti_boredom(available, state.recipe_history)
         suggestions = choose_suggested_recipes(state, available)
 
-        state.suggested_recipes = suggestions
-        state.generated_recipe = suggestions[0] if suggestions else None
-        state.recipe = state.generated_recipe
-        state.meal_plan = MealPlan(
-            meals=suggestions,
-            total_calories=sum(recipe.macro_fit.calories_achieved for recipe in suggestions),
-            total_protein=sum(recipe.macro_fit.protein_achieved for recipe in suggestions),
-        )
+        if state.mode == "full_day" and suggestions:
+            base_recipe = suggestions[0]
+            base_recipe = bridge_macro_gaps(state, base_recipe, inventory)
+            meals, daily_missing = split_full_day_plan(state, base_recipe, base_recipe.missing_ingredients)
+            state.suggested_recipes = meals
+            state.generated_recipe = meals[0]
+            state.recipe = meals[0]
+            state.meal_plan = MealPlan(
+                meals=meals,
+                total_calories=sum(meal.macro_fit.calories_achieved for meal in meals),
+                total_protein=sum(meal.macro_fit.protein_achieved for meal in meals),
+                total_carbs=sum(meal.macro_fit.carbs_achieved for meal in meals),
+                total_fat=sum(meal.macro_fit.fat_achieved for meal in meals),
+            )
+            state.missing_ingredients = daily_missing
+        else:
+            state.suggested_recipes = suggestions
+            state.generated_recipe = suggestions[0] if suggestions else None
+            state.recipe = state.generated_recipe
+            state.meal_plan = MealPlan(
+                meals=suggestions,
+                total_calories=sum(recipe.macro_fit.calories_achieved for recipe in suggestions),
+                total_protein=sum(recipe.macro_fit.protein_achieved for recipe in suggestions),
+                total_carbs=sum(recipe.macro_fit.carbs_achieved for recipe in suggestions),
+                total_fat=sum(recipe.macro_fit.fat_achieved for recipe in suggestions),
+            )
 
-        if state.generated_recipe:
-            state.recipe_history.append(state.generated_recipe.name)
-            state.generated_recipe.missing_ingredients = [
-                ingredient.name
-                for ingredient in state.generated_recipe.ingredients
-                if ingredient.name.strip().lower() not in inventory and ingredient.name.strip().lower() != "water"
-            ]
-            state.missing_ingredients = state.generated_recipe.missing_ingredients.copy()
+            if state.generated_recipe:
+                state.recipe_history.append(state.generated_recipe.name)
+                state.generated_recipe.missing_ingredients = [
+                    ingredient.name
+                    for ingredient in state.generated_recipe.ingredients
+                    if ingredient.name.strip().lower() not in inventory and ingredient.name.strip().lower() != "water"
+                ]
+                state.missing_ingredients = state.generated_recipe.missing_ingredients.copy()
 
     state.validate_zero_waste()
 

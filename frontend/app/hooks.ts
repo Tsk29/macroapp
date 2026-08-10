@@ -16,7 +16,7 @@ export function useNutritionAgent() {
     target_protein: number;
     target_carbs: number;
     target_fat: number;
-    ingredients: Array<{ name: string; amount: number; unit: string }>;
+    ingredients: Array<{ id: string; name: string; amount: number; unit: string }>;
   }) {
     setIsLoading(true);
     setError(null);
