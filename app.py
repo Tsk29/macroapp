@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from main import run_workflow
-from schemas import AppState, IngredientDetail
+from schemas import AppState, IngredientInput
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -40,12 +40,12 @@ class SubmitPayload(BaseModel):
     user_prompt: str | None = None
     mode: Literal["single_meal", "full_day"] = "single_meal"
     meal_type: str | None = "Lunch"
-    cuisine_preferences: list[str] = Field(default_factory=list)
+    cuisine_preference: list[str] = Field(default_factory=list)
     target_calories: int = 0
     target_protein: int = 0
     target_carbs: int = 0
     target_fat: int = 0
-    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
+    ingredients: list[IngredientInput] = Field(default_factory=list)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -70,12 +70,12 @@ async def submit_api(payload: SubmitPayload) -> AppState:
         user_prompt=payload.user_prompt,
         mode=payload.mode,
         meal_type=payload.meal_type,
-        cuisine_preferences=payload.cuisine_preferences,
+        cuisine_preference=payload.cuisine_preference,
         target_calories=payload.target_calories,
         target_protein=payload.target_protein,
         target_carbs=payload.target_carbs,
         target_fat=payload.target_fat,
-        ingredient_details=payload.ingredient_details,
+        ingredients=payload.ingredients,
     )
     final_state = await run_workflow(state)
     return final_state
@@ -87,12 +87,12 @@ async def generate_api(payload: SubmitPayload) -> AppState:
         user_prompt=payload.user_prompt,
         mode=payload.mode,
         meal_type=payload.meal_type,
-        cuisine_preferences=payload.cuisine_preferences,
+        cuisine_preference=payload.cuisine_preference,
         target_calories=payload.target_calories,
         target_protein=payload.target_protein,
         target_carbs=payload.target_carbs,
         target_fat=payload.target_fat,
-        ingredient_details=payload.ingredient_details,
+        ingredients=payload.ingredients,
     )
     final_state = await run_workflow(state)
     return final_state
@@ -112,7 +112,7 @@ async def submit(
         user_prompt=user_prompt,
         mode=mode,
         meal_type=meal_type,
-        cuisine_preferences=cuisine_preferences,
+        cuisine_preference=cuisine_preferences,
     )
 
     if upload is not None and upload.filename:

@@ -11,12 +11,12 @@ export function useNutritionAgent() {
     user_prompt: string;
     mode: 'single_meal' | 'full_day';
     meal_type: string;
-    cuisine_preferences: string[];
+    cuisine_preference: string[];
     target_calories: number;
     target_protein: number;
     target_carbs: number;
     target_fat: number;
-    ingredient_details: Array<{ name: string; amount: string }>;
+    ingredients: Array<{ name: string; amount: number; unit: string }>;
   }) {
     setIsLoading(true);
     setError(null);

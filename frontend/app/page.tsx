@@ -13,27 +13,13 @@ const allCuisines = [
   { name: 'Greek', emoji: '🥙' },
 ];
 
-const initialRecipe = {
-  name: 'Savory Mediterranean Bowl',
-  cuisine: 'Mediterranean',
-  calories: 620,
-  protein_grams: 46,
-  carbs: 54,
-  fat: 23,
-  ingredients: ['Chicken breast', 'Brown rice', 'Broccoli', 'Olive oil', 'Feta cheese'],
-  instructions: [
-    'Season and grill chicken with herbs.',
-    'Cook brown rice until tender.',
-    'Steam broccoli and toss with olive oil.',
-    'Combine all ingredients and top with feta.',
-  ],
-};
+const initialRecipe = null;
 
 export default function Home() {
-  type IngredientDetailInput = { name: string; amount: string };
+  type IngredientInput = { name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
 
-  const [ingredientDetails, setIngredientDetails] = useState<IngredientDetailInput[]>([
-    { name: 'chicken thighs', amount: '200g' },
+  const [ingredients, setIngredients] = useState<IngredientInput[]>([
+    { name: '', amount: 0, unit: 'g' },
   ]);
   const [mode, setMode] = useState<'single_meal' | 'full_day'>('single_meal');
   const [mealType, setMealType] = useState('Lunch');
@@ -44,12 +30,7 @@ export default function Home() {
   const [targetFat, setTargetFat] = useState(60);
   const { state, isLoading, error, generateRecipe } = useNutritionAgent();
 
-  const recipe = useMemo(() => {
-    if (state?.generated_recipe) {
-      return state.generated_recipe;
-    }
-    return initialRecipe;
-  }, [state]);
+  const recipe = useMemo(() => state?.generated_recipe ?? undefined, [state]);
 
   const receipt = useMemo(
     () => {
@@ -58,34 +39,25 @@ export default function Home() {
         return {
           missing: state.scraper_results.items,
           total: state.scraper_results.total_cost ?? 0,
-          store: stores.length > 1 ? stores.join(' & ') : stores[0] ?? 'Lidl',
-          cheapest: state.scraper_results.cheapest_store_overall ?? 'Lidl',
-        };
-      }
-
-      if (state?.missing_ingredients?.length) {
-        return {
-          missing: state.missing_ingredients.map((item: string) => ({ name: item, store: 'Lidl', price: 0 })),
-          total: state.shopping_estimate ?? state.missing_ingredients.length * 2.5,
-          store: 'Lidl',
-          cheapest: 'Lidl',
+          store: stores.length > 1 ? stores.join(' & ') : stores[0] ?? 'Unknown',
+          cheapest: state.scraper_results.cheapest_store_overall ?? 'Unknown',
         };
       }
 
       return {
-        missing: [
-          { name: 'Olive oil', store: 'Lidl', price: 3.5 },
-          { name: 'Feta cheese', store: 'Aldi Süd', price: 2.4 },
-        ],
-        total: 5.9,
-        store: 'Lidl & Aldi Süd',
-        cheapest: 'Lidl',
+        missing: [],
+        total: 0,
+        store: 'None',
+        cheapest: 'None',
       };
     },
     [state],
   ) as { missing: Array<{ name: string; store: string; price: number }>; total: number; store: string; cheapest: string };
 
   const recipeInstructions = useMemo(() => {
+    if (!recipe) {
+      return [];
+    }
     if (Array.isArray(recipe.instructions)) {
       return recipe.instructions;
     }
@@ -93,32 +65,40 @@ export default function Home() {
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean);
-  }, [recipe.instructions]);
-
-  const macros = useMemo(() => {
-    const calories = recipe.calories ?? 0;
-    const protein = recipe.protein_grams ?? 0;
-    const fat = recipe.fat ?? 0;
-    const carbs = Math.max(0, Math.round((calories - protein * 4 - fat * 9) / 4));
-    return [
-      { name: 'Protein', value: protein, color: 'from-emerald-400 to-teal-400' },
-      { name: 'Carbs', value: carbs, color: 'from-sky-400 to-blue-400' },
-      { name: 'Fat', value: fat, color: 'from-orange-400 to-amber-400' },
-    ];
   }, [recipe]);
 
+  const macroFit = useMemo(() => {
+    return recipe?.macro_fit ?? {
+      calories_target: targetCalories,
+      calories_achieved: 0,
+      calories_delta: 0,
+      protein_target: targetProtein,
+      protein_achieved: 0,
+      protein_delta: 0,
+      carbs_target: targetCarbs,
+      carbs_achieved: 0,
+      carbs_delta: 0,
+      fat_target: targetFat,
+      fat_achieved: 0,
+      fat_delta: 0,
+      match_score_percentage: 0.0,
+    };
+  }, [recipe, targetCalories, targetProtein, targetCarbs, targetFat]);
+
   async function handleGenerate() {
-    await generateRecipe({
-      user_prompt: ingredientDetails.map((item) => item.name).filter(Boolean).join(', '),
+    const payload = {
+      user_prompt: ingredients.map((item) => item.name).filter(Boolean).join(', '),
       mode,
       meal_type: mealType,
-      cuisine_preferences: selectedCuisines,
+      cuisine_preference: selectedCuisines,
       target_calories: targetCalories,
       target_protein: targetProtein,
       target_carbs: targetCarbs,
       target_fat: targetFat,
-      ingredient_details: ingredientDetails,
-    });
+      ingredients,
+    };
+
+    await generateRecipe(payload);
   }
 
   return (
@@ -153,34 +133,52 @@ export default function Home() {
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
                   <label className="text-sm font-semibold text-slate-300">Ingredients</label>
                   <div className="space-y-3">
-                    {ingredientDetails.map((item, index) => (
-                      <div key={`${item.name}-${index}`} className="grid gap-3 rounded-3xl border border-white/10 bg-slate-900/80 p-4 sm:grid-cols-[1.5fr_1fr_0.5fr]">
+                    {ingredients.map((item, index) => (
+                      <div key={`${item.name}-${index}`} className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-slate-900/80 p-3">
                         <input
                           value={item.name}
                           onChange={(event) => {
-                            const next = [...ingredientDetails];
+                            const next = [...ingredients];
                             next[index] = { ...next[index], name: event.target.value };
-                            setIngredientDetails(next);
+                            setIngredients(next);
                           }}
-                          className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
-                          placeholder="Ingredient name"
+                          className="flex-1 min-w-[110px] rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                          placeholder="e.g. Chicken thighs"
                         />
+
                         <input
-                          value={item.amount}
+                          type="number"
+                          value={item.amount || ''}
                           onChange={(event) => {
-                            const next = [...ingredientDetails];
-                            next[index] = { ...next[index], amount: event.target.value };
-                            setIngredientDetails(next);
+                            const next = [...ingredients];
+                            next[index] = { ...next[index], amount: Number(event.target.value) };
+                            setIngredients(next);
                           }}
-                          className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
-                          placeholder="Amount / unit"
+                          className="w-16 rounded-xl border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-white text-center focus:border-indigo-500 focus:outline-none"
+                          placeholder="200"
                         />
+
+                        <select
+                          value={item.unit}
+                          onChange={(event) => {
+                            const next = [...ingredients];
+                            next[index] = { ...next[index], unit: event.target.value as 'g' | 'ml' | 'whole' };
+                            setIngredients(next);
+                          }}
+                          className="w-20 rounded-xl border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                        >
+                          <option value="g">g</option>
+                          <option value="ml">ml</option>
+                          <option value="oz">oz</option>
+                          <option value="whole">whole</option>
+                        </select>
+
                         <button
                           type="button"
                           onClick={() => {
-                            setIngredientDetails((current) => current.filter((_, i) => i !== index));
+                            setIngredients((current) => current.filter((_, i) => i !== index));
                           }}
-                          className="rounded-3xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-200 transition hover:bg-rose-500/20"
+                          className="shrink-0 rounded-xl bg-rose-500/20 px-2.5 py-2 text-xs font-medium text-rose-300 transition hover:bg-rose-500/30"
                         >
                           Remove
                         </button>
@@ -188,7 +186,7 @@ export default function Home() {
                     ))}
                     <button
                       type="button"
-                      onClick={() => setIngredientDetails((current) => [...current, { name: '', amount: '' }])}
+                      onClick={() => setIngredients((current) => [...current, { name: '', amount: 0, unit: 'g' }])}
                       className="inline-flex items-center justify-center rounded-3xl bg-slate-800/90 px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-slate-700/80"
                     >
                       + Add Ingredient
@@ -198,7 +196,7 @@ export default function Home() {
 
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
                   <label className="text-sm font-semibold text-slate-300">Choose cuisine</label>
-                  <div className="flex gap-3 overflow-x-auto whitespace-nowrap py-2">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2">
                     {allCuisines.map((cuisine) => {
                       const active = selectedCuisines.includes(cuisine.name);
                       return (
@@ -212,16 +210,16 @@ export default function Home() {
                                 : [...current, cuisine.name]
                             );
                           }}
-                          className={`inline-flex min-w-[120px] items-center gap-3 rounded-3xl border px-4 py-3 text-left transition ${
+                          className={`inline-flex items-center gap-3 rounded-3xl border px-4 py-3 text-sm font-medium transition ${
                             active
                               ? 'border-cyan-400/30 bg-cyan-400/10 text-white'
                               : 'border-white/10 bg-slate-800/70 text-slate-200 hover:-translate-y-0.5 hover:bg-slate-700/80'
                           }`}
                         >
-                          <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950/80 text-lg shadow-soft">
+                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950/80 text-lg shadow-soft">
                             {cuisine.emoji}
                           </span>
-                          <span className="text-sm font-medium whitespace-nowrap">{cuisine.name}</span>
+                          <span className="truncate">{cuisine.name}</span>
                         </button>
                       );
                     })}
@@ -284,36 +282,35 @@ export default function Home() {
             <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Macro rings</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Nutrition snapshot</h2>
+                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Macro report</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Macro Match & Delta</h2>
                 </div>
-                <CheckCircle2 className="h-8 w-8 text-emerald-300" />
+                <div className="inline-flex items-center gap-2 rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                  <span>🟢</span>
+                  <span>{macroFit.match_score_percentage}% Match</span>
+                </div>
               </div>
 
               <div className="mt-8 grid gap-5">
                 <div className="grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-slate-400">Calories</p>
-                      <p className="mt-2 text-3xl font-semibold text-white">{recipe.calories} kcal</p>
-                    </div>
-                    <div className="rounded-full bg-slate-800/80 px-4 py-3 text-sm text-slate-300">Target 1900 kcal</div>
-                  </div>
-                  <div className="grid gap-3">
-                    {macros.map((macro) => (
-                      <div key={macro.name} className="space-y-2">
-                        <div className="flex items-center justify-between text-sm text-slate-300">
-                          <span>{macro.name}</span>
-                          <span>{macro.value}g</span>
-                        </div>
-                        <div className="h-3 overflow-hidden rounded-full bg-white/5">
-                          <div className={`h-full rounded-full bg-gradient-to-r ${macro.color} transition-all`} style={{ width: `${Math.min(macro.value, 100)}%` }} />
-                        </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {[
+                      { label: 'Calories', target: macroFit.calories_target, actual: macroFit.calories_achieved, delta: macroFit.calories_delta },
+                      { label: 'Protein', target: macroFit.protein_target, actual: macroFit.protein_achieved, delta: macroFit.protein_delta },
+                      { label: 'Carbs', target: macroFit.carbs_target, actual: macroFit.carbs_achieved, delta: macroFit.carbs_delta },
+                      { label: 'Fat', target: macroFit.fat_target, actual: macroFit.fat_achieved, delta: macroFit.fat_delta },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                        <p className="text-sm text-slate-400">{item.label}</p>
+                        <p className="mt-2 text-xl font-semibold text-white">{item.actual} / {item.target}{item.label !== 'Calories' ? 'g' : ' kcal'}</p>
+                        <p className={`mt-1 text-sm ${item.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                          {item.delta >= 0 ? `+${item.delta}` : item.delta}
+                          {item.label !== 'Calories' ? 'g' : ' kcal'}
+                        </p>
                       </div>
                     ))}
                   </div>
                 </div>
-
               </div>
             </section>
           </div>
@@ -322,7 +319,7 @@ export default function Home() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">The Recipe</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">{recipe.name}</h2>
+                <h2 className="mt-2 text-2xl font-semibold text-white">{recipe?.name ?? 'No recipe generated yet'}</h2>
               </div>
               <div className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">High protein</div>
             </div>
@@ -331,23 +328,37 @@ export default function Home() {
               <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
                 <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
                 <ul className="mt-5 space-y-3 text-slate-200">
-                  {(recipe.ingredients ?? []).map((ingredient: string) => (
-                    <li key={ingredient} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
-                      {ingredient}
+                  {(recipe?.ingredients ?? []).map((ingredient: any, index: number) => (
+                    <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
+                      <div className="flex items-center justify-between gap-4">
+                        <span>{ingredient.name}</span>
+                        <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
+                      </div>
                     </li>
                   ))}
+                  {!recipe?.ingredients?.length ? (
+                    <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-3 text-slate-500">
+                      Add ingredients and generate to see the recipe details.
+                    </li>
+                  ) : null}
                 </ul>
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
                 <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
                 <ol className="mt-5 space-y-4 text-slate-200">
-                  {(recipe.instructions ?? []).map((step: string, index: number) => (
-                    <li key={`${step}-${index}`} className="flex gap-4 rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-slate-100">{index + 1}</span>
-                      <p>{step}</p>
+                  {recipeInstructions.length ? (
+                    recipeInstructions.map((step: string, index: number) => (
+                      <li key={`${step}-${index}`} className="flex gap-4 rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-slate-100">{index + 1}</span>
+                        <p>{step}</p>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-4 text-slate-500">
+                      Generate a recipe to see step-by-step instructions.
                     </li>
-                  ))}
+                  )}
                 </ol>
               </div>
             </div>

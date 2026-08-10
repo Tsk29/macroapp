@@ -6,24 +6,44 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class IngredientDetail(BaseModel):
+class IngredientInput(BaseModel):
     name: str
-    amount: str = Field(default='')
+    amount: float
+    unit: Literal["g", "ml", "whole"]
+
+
+class MacroFit(BaseModel):
+    calories_target: int = 0
+    calories_achieved: int = 0
+    calories_delta: int = 0
+    protein_target: int = 0
+    protein_achieved: int = 0
+    protein_delta: int = 0
+    carbs_target: int = 0
+    carbs_achieved: int = 0
+    carbs_delta: int = 0
+    fat_target: int = 0
+    fat_achieved: int = 0
+    fat_delta: int = 0
+    match_score_percentage: float = 0.0
 
 
 class Recipe(BaseModel):
-    name: str
+    title: str
+    name: str | None = None
     cuisine: str | None = None
-    ingredients: list[str] = Field(default_factory=list)
-    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
-    instructions: str | list[str] = Field(default_factory=str)
-    calories: int = 0
-    protein_grams: int = 0
-    fat: int = 0
-    missing_ingredients: list[str] = Field(default_factory=list)
-    servings: int = 1
-    source: str | None = None
     meal_type: str | None = None
+    prep_time_mins: int = 0
+    ingredients: list[IngredientInput] = Field(default_factory=list)
+    missing_ingredients: list[str] = Field(default_factory=list)
+    instructions: list[str] = Field(default_factory=list)
+    macro_fit: MacroFit = Field(default_factory=MacroFit)
+
+    @model_validator(mode="after")
+    def set_name(self) -> "Recipe":
+        if not self.name:
+            self.name = self.title
+        return self
 
 
 class MealPlan(BaseModel):
@@ -48,15 +68,15 @@ class AppState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
     user_prompt: str | None = None
-    cuisine_preferences: list[str] = Field(default_factory=list)
+    cuisine_preference: list[str] = Field(default_factory=list)
     mode: Literal["single_meal", "full_day"] = "single_meal"
     meal_type: str | None = "Lunch"
     target_calories: int = 0
     target_protein: int = 0
     target_carbs: int = 0
     target_fat: int = 0
+    ingredients: list[IngredientInput] = Field(default_factory=list)
     pantry_items: list[str] = Field(default_factory=list)
-    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
     available_inventory: list[str] = Field(default_factory=list)
     missing_ingredients: list[str] = Field(default_factory=list)
     recipe_history: list[str] = Field(default_factory=list)
@@ -80,15 +100,11 @@ class AppState(BaseModel):
 
         recipe = self.generated_recipe or self.recipe
         if recipe is not None:
-            actual_ingredients = {ing.strip().lower() for ing in recipe.ingredients if ing.strip()}
+            actual_ingredients = {ing.name.strip().lower() for ing in recipe.ingredients if ing.name.strip()}
             if inventory and not (actual_ingredients & inventory):
-                raise ValueError(
-                    "generated_recipe must include at least one available inventory item"
-                )
+                raise ValueError("generated_recipe must include at least one available inventory item")
 
-            expected_missing = {
-                ing for ing in actual_ingredients if ing not in inventory and ing != "water"
-            }
+            expected_missing = {ing for ing in actual_ingredients if ing not in inventory and ing != "water"}
             reported_missing = {ing.strip().lower() for ing in self.missing_ingredients if ing.strip()}
             recipe_missing = {ing.strip().lower() for ing in recipe.missing_ingredients if ing.strip()}
             if reported_missing != expected_missing or recipe_missing != expected_missing:
