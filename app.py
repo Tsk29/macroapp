@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from main import run_workflow
-from schemas import AppState
+from schemas import AppState, IngredientDetail
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -22,7 +22,12 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 app = FastAPI(title="Nutrition Agent Web UI")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_origins=[
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:3001",
+    ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -36,6 +41,11 @@ class SubmitPayload(BaseModel):
     mode: Literal["single_meal", "full_day"] = "single_meal"
     meal_type: str | None = "Lunch"
     cuisine_preferences: list[str] = Field(default_factory=list)
+    target_calories: int = 0
+    target_protein: int = 0
+    target_carbs: int = 0
+    target_fat: int = 0
+    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -61,6 +71,28 @@ async def submit_api(payload: SubmitPayload) -> AppState:
         mode=payload.mode,
         meal_type=payload.meal_type,
         cuisine_preferences=payload.cuisine_preferences,
+        target_calories=payload.target_calories,
+        target_protein=payload.target_protein,
+        target_carbs=payload.target_carbs,
+        target_fat=payload.target_fat,
+        ingredient_details=payload.ingredient_details,
+    )
+    final_state = await run_workflow(state)
+    return final_state
+
+
+@app.post("/generate", response_model=AppState)
+async def generate_api(payload: SubmitPayload) -> AppState:
+    state = AppState(
+        user_prompt=payload.user_prompt,
+        mode=payload.mode,
+        meal_type=payload.meal_type,
+        cuisine_preferences=payload.cuisine_preferences,
+        target_calories=payload.target_calories,
+        target_protein=payload.target_protein,
+        target_carbs=payload.target_carbs,
+        target_fat=payload.target_fat,
+        ingredient_details=payload.ingredient_details,
     )
     final_state = await run_workflow(state)
     return final_state

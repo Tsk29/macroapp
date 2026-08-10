@@ -6,13 +6,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+class IngredientDetail(BaseModel):
+    name: str
+    amount: str = Field(default='')
+
+
 class Recipe(BaseModel):
     name: str
     cuisine: str | None = None
     ingredients: list[str] = Field(default_factory=list)
-    instructions: str
+    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
+    instructions: str | list[str] = Field(default_factory=str)
     calories: int = 0
     protein_grams: int = 0
+    fat: int = 0
     missing_ingredients: list[str] = Field(default_factory=list)
     servings: int = 1
     source: str | None = None
@@ -25,6 +32,18 @@ class MealPlan(BaseModel):
     total_protein: int = 0
 
 
+class ScraperItem(BaseModel):
+    name: str
+    store: str
+    price: float
+
+
+class ScraperResults(BaseModel):
+    items: list[ScraperItem] = Field(default_factory=list)
+    cheapest_store_overall: str | None = None
+    total_cost: float = 0.0
+
+
 class AppState(BaseModel):
     model_config = ConfigDict(validate_assignment=True)
 
@@ -32,7 +51,12 @@ class AppState(BaseModel):
     cuisine_preferences: list[str] = Field(default_factory=list)
     mode: Literal["single_meal", "full_day"] = "single_meal"
     meal_type: str | None = "Lunch"
+    target_calories: int = 0
+    target_protein: int = 0
+    target_carbs: int = 0
+    target_fat: int = 0
     pantry_items: list[str] = Field(default_factory=list)
+    ingredient_details: list[IngredientDetail] = Field(default_factory=list)
     available_inventory: list[str] = Field(default_factory=list)
     missing_ingredients: list[str] = Field(default_factory=list)
     recipe_history: list[str] = Field(default_factory=list)
@@ -44,6 +68,7 @@ class AppState(BaseModel):
     suggested_recipes: list[Recipe] = Field(default_factory=list)
     shopping_estimate: float | None = None
     scraper_report: str | None = None
+    scraper_results: ScraperResults | None = None
     uploaded_image_name: str | None = None
     input_source: Literal["text", "image", "upload"] = "text"
     cuisine_selected: str | None = None
@@ -64,8 +89,9 @@ class AppState(BaseModel):
             expected_missing = {
                 ing for ing in actual_ingredients if ing not in inventory and ing != "water"
             }
-            reported_missing = {ing.strip().lower() for ing in recipe.missing_ingredients if ing.strip()}
-            if reported_missing != expected_missing:
+            reported_missing = {ing.strip().lower() for ing in self.missing_ingredients if ing.strip()}
+            recipe_missing = {ing.strip().lower() for ing in recipe.missing_ingredients if ing.strip()}
+            if reported_missing != expected_missing or recipe_missing != expected_missing:
                 raise ValueError(
                     "generated_recipe.missing_ingredients must exactly reflect recipe ingredients not in available_inventory"
                 )

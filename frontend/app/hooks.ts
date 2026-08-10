@@ -12,12 +12,17 @@ export function useNutritionAgent() {
     mode: 'single_meal' | 'full_day';
     meal_type: string;
     cuisine_preferences: string[];
+    target_calories: number;
+    target_protein: number;
+    target_carbs: number;
+    target_fat: number;
+    ingredient_details: Array<{ name: string; amount: string }>;
   }) {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/submit', {
+      const response = await fetch('http://127.0.0.1:8000/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -27,15 +32,15 @@ export function useNutritionAgent() {
 
       if (!response.ok) {
         const message = await response.text();
-        throw new Error(message || 'Failed to generate recipe');
+        throw new Error(message || `Failed to generate recipe: ${response.status}`);
       }
 
       const data = await response.json();
       setState(data);
       return data;
     } catch (err) {
+      console.error('Recipe generation error:', err);
       setError(err instanceof Error ? err.message : 'Unexpected error');
-      console.error(err);
       return null;
     } finally {
       setIsLoading(false);
