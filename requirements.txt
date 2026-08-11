@@ -7,3 +7,5 @@ langgraph
 python-dotenv
 nest-asyncio
 playwright
+langchain
+google-genai

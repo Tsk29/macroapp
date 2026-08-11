@@ -15,18 +15,18 @@ const allCuisines = [
 
 const initialRecipe = null;
 
+type IngredientInput = { id: string; name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
+
+const createIngredient = () => ({
+  id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `ingredient-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  name: '',
+  amount: 0,
+  unit: 'g' as const,
+});
+
 export default function Home() {
-  type IngredientInput = { id: string; name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
-
-  const createIngredient = () => ({
-    id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-      ? crypto.randomUUID()
-      : `ingredient-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    name: '',
-    amount: 0,
-    unit: 'g' as const,
-  });
-
   const [ingredients, setIngredients] = useState<IngredientInput[]>(() => [createIngredient()]);
   const [mode, setMode] = useState<'single_meal' | 'full_day'>('single_meal');
   const [mealType, setMealType] = useState('Lunch');
@@ -35,7 +35,7 @@ export default function Home() {
   const [targetProtein, setTargetProtein] = useState(130);
   const [targetCarbs, setTargetCarbs] = useState(180);
   const [targetFat, setTargetFat] = useState(60);
-  const { state, isLoading, error, generateRecipe } = useNutritionAgent();
+  const { state, isLoading, error, generateRecipe, parsePantryImage } = useNutritionAgent();
 
   const meals = useMemo(() => {
     if (mode === 'full_day') {
@@ -99,6 +99,26 @@ export default function Home() {
       match_score_percentage: 0.0,
     };
   }, [recipe, targetCalories, targetProtein, targetCarbs, targetFat]);
+
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+
+  async function handleParseImage() {
+    if (!selectedImage) return;
+
+    const parsedIngredients = await parsePantryImage(selectedImage);
+    if (!parsedIngredients || !Array.isArray(parsedIngredients)) return;
+
+    setIngredients((current) => [
+      ...current,
+      ...parsedIngredients.map((item: any) => ({
+        id: item.id || createIngredient().id,
+        name: item.name || '',
+        amount: item.amount ?? 0,
+        unit: item.unit || 'g',
+      }))
+    ]);
+    setSelectedImage(null);
+  }
 
   async function handleGenerate() {
     const payload = {
@@ -232,8 +252,45 @@ export default function Home() {
                 </div>
 
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-semibold text-slate-300">Upload pantry photo</label>
+                    <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-400">Gemini Vision</span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
+                    <label className="flex cursor-pointer flex-col rounded-3xl border border-dashed border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300 transition hover:border-slate-400">
+                      <span className="mb-2 flex items-center gap-2 text-slate-200">
+                        <UploadCloud className="h-4 w-4" /> Select image
+                      </span>
+                      <span className="text-xs text-slate-500">PNG, JPG, JPEG, WEBP</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setSelectedImage(file);
+                        }}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handleParseImage}
+                      disabled={!selectedImage || isLoading}
+                      className="inline-flex items-center justify-center rounded-3xl bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Parse image
+                    </button>
+                  </div>
+                  {selectedImage ? (
+                    <p className="text-xs text-slate-400">Selected file: {selectedImage.name}</p>
+                  ) : (
+                    <p className="text-xs text-slate-500">Upload a pantry image to auto-fill ingredients.</p>
+                  )}
+                </div>
+
+                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
                   <label className="text-sm font-semibold text-slate-300">Choose cuisine</label>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2">
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
                     {allCuisines.map((cuisine) => {
                       const active = selectedCuisines.includes(cuisine.name);
                       return (
@@ -256,7 +313,7 @@ export default function Home() {
                           <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950/80 text-lg shadow-soft">
                             {cuisine.emoji}
                           </span>
-                          <span className="truncate">{cuisine.name}</span>
+                          <span className="truncate whitespace-nowrap overflow-hidden text-ellipsis">{cuisine.name}</span>
                         </button>
                       );
                     })}
@@ -374,8 +431,8 @@ export default function Home() {
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">
                   {mode === 'full_day'
-                    ? `Full day plan${meals?.length ? ` — ${meals.length} meals` : ''}`
-                    : recipe?.name ?? 'No recipe generated yet'}
+                    ? `Full Day Plan — ${meals?.length ? meals.length : 0} Meal${meals?.length !== 1 ? 's' : ''}`
+                    : 'Single Meal Plan'}
                 </h2>
               </div>
               <div className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">High protein</div>
