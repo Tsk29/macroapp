@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import json
+import os
+
+from groq import Groq
 
 from schemas import AppState, IngredientInput, MacroFit, MealPlan, Recipe, ScraperItem, ScraperResults
 
@@ -438,6 +443,62 @@ async def vision_node(state: AppState) -> AppState:
         state.pantry_items = state.pantry_items or ["chicken breast", "brown rice", "broccoli"]
         state.missing_ingredients = ["olive oil", "salt"]
     return state
+
+
+async def parse_image_node(image_base64: str) -> list[IngredientInput]:
+    """Parse a pantry image (base64) and return detected ingredients using Groq vision."""
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+    prompt = (
+        "You are a helpful assistant that extracts raw pantry ingredients from a fridge or pantry image. "
+        "Estimate their weights/quantities. Ignore cooked leftovers or condiments like ketchup. "
+        "Return ONLY a valid JSON array of objects with fields: name, amount, unit. "
+        "For unit, use only 'g', 'ml', or 'whole'. No explanation outside the JSON array."
+    )
+
+    response = client.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                ],
+            }
+        ],
+        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        response_format={"type": "json_object"},
+    )
+
+    output_text = response.choices[0].message.content
+    if not output_text:
+        raise RuntimeError("Groq did not return any text for the image.")
+
+    try:
+        parsed = json.loads(output_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Failed to decode Groq response as JSON: {exc}\nResponse: {output_text}") from exc
+
+    # Handle both {"ingredients": [...]} and [...] shapes
+    if isinstance(parsed, dict):
+        parsed = parsed.get("ingredients") or parsed.get("items") or list(parsed.values())[0]
+    if not isinstance(parsed, list):
+        raise RuntimeError(f"Expected JSON array, got: {type(parsed).__name__}")
+
+    ingredients: list[IngredientInput] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        ingredient = IngredientInput(
+            id=item.get("id") or None,
+            name=str(item.get("name", "")).strip(),
+            amount=float(item.get("amount", 0) or 0),
+            unit=str(item.get("unit", "g")),
+        )
+        if ingredient.name:
+            ingredients.append(ingredient)
+
+    return ingredients
 
 
 async def chef_node(state: AppState) -> AppState:
