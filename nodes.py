@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 
-import google.genai as genai
-from google.genai import types
+from groq import Groq
 
 from schemas import AppState, IngredientInput, MacroFit, MealPlan, Recipe, ScraperItem, ScraperResults
 
@@ -498,7 +498,7 @@ async def parse_image_node(image_base64: str) -> list[IngredientInput]:
 
 
 async def chef_node(state: AppState) -> AppState:
-    client = genai.Client()
+    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
     
     exact_ingredient_names = [
         ingredient.name.strip() for ingredient in state.ingredients if ingredient.name.strip()
@@ -516,19 +516,47 @@ async def chef_node(state: AppState) -> AppState:
     state.available_inventory = sorted(inventory)
     inventory_str = ", ".join(state.available_inventory)
     
-    mode_instructions = ""
     if state.mode == "full_day":
         mode_instructions = "You must output a full day MealPlan consisting of exactly 3 or 4 distinct meals that together divide and meet the target macros."
-        response_schema = MealPlan
+        schema_description = """Return a JSON object matching this schema:
+{
+  "meals": [
+    {
+      "name": "string",
+      "meal_type": "string",
+      "cuisine": "string",
+      "ingredients": [{"name": "string", "amount": number, "unit": "string", "calories": number, "protein": number, "carbs": number, "fat": number}],
+      "missing_ingredients": ["string"],
+      "instructions": ["string"],
+      "total_calories": number,
+      "total_protein": number,
+      "total_carbs": number,
+      "total_fat": number,
+      "tags": ["string"]
+    }
+  ]
+}"""
     else:
         mode_instructions = f"You must output a single Recipe for a {state.meal_type or 'Meal'} that meets the target macros."
-        response_schema = Recipe
+        schema_description = """Return a JSON object matching this schema:
+{
+  "name": "string",
+  "meal_type": "string",
+  "cuisine": "string",
+  "ingredients": [{"name": "string", "amount": number, "unit": "string", "calories": number, "protein": number, "carbs": number, "fat": number}],
+  "missing_ingredients": ["string"],
+  "instructions": ["string"],
+  "total_calories": number,
+  "total_protein": number,
+  "total_carbs": number,
+  "total_fat": number,
+  "tags": ["string"]
+}"""
 
     cuisine_str = ", ".join(state.cuisine_preference) if state.cuisine_preference else "Any"
 
-    prompt = f"""
-You are an expert AI chef and nutritionist.
-The user wants a meal plan. 
+    prompt = f"""You are an expert AI chef and nutritionist.
+The user wants a meal plan.
 Mode: {state.mode}
 {mode_instructions}
 
@@ -538,26 +566,27 @@ Cuisine Preferences: {cuisine_str}
 Provided User Ingredients to include: {", ".join(exact_ingredient_names) if exact_ingredient_names else "None"}
 
 CRITICAL RULES:
-1. Anti-Frankenstein Rule: DO NOT dump all ingredients into a single unholy mixture. Build logical, cohesive dishes. Do not mix incompatible bases like pasta and rice in one dish unless it makes culinary sense.
-2. Macro Bridging: Add necessary ingredients (like olive oil, veggies, or sauces) to hit the macro targets. Any ingredient you add that is NOT in the Available Inventory MUST be added to the `missing_ingredients` array of the recipe.
+1. Anti-Frankenstein Rule: DO NOT dump all ingredients into a single unholy mixture. Build logical, cohesive dishes.
+2. Macro Bridging: Add necessary ingredients to hit the macro targets. Any added ingredient NOT in the Available Inventory MUST be in the `missing_ingredients` array.
 3. Keep the recipes realistic and tasty.
-"""
-    
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=response_schema,
-            temperature=0.7,
-        )
+
+{schema_description}
+
+Respond with ONLY valid JSON. No markdown, no explanation."""
+
+    chat_completion = client.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model="llama-3.3-70b-versatile",
+        temperature=0.7,
+        response_format={"type": "json_object"},
     )
-    
-    if not response.text:
-        raise RuntimeError("No response from Gemini")
+
+    raw_text = chat_completion.choices[0].message.content
+    if not raw_text:
+        raise RuntimeError("No response from Groq")
         
     try:
-        parsed = json.loads(response.text)
+        parsed = json.loads(raw_text)
     except Exception as e:
         raise RuntimeError("Failed to parse JSON: " + str(e))
     
