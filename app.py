@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import uuid
-import base64
-import uuid
 from pathlib import Path
 from typing import List, Optional, Literal
 
@@ -12,12 +10,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-from dotenv import load_dotenv
-
-load_dotenv()
 
 from main import run_workflow
-from nodes import parse_image_node
 from schemas import AppState, IngredientInput
 
 
@@ -102,24 +96,6 @@ async def generate_api(payload: SubmitPayload) -> AppState:
     )
     final_state = await run_workflow(state)
     return final_state
-
-
-@app.post("/parse-image", response_model=list[IngredientInput])
-async def parse_image_api(upload: UploadFile = File(...)) -> list[IngredientInput]:
-    if upload.filename:
-        file_extension = Path(upload.filename).suffix.lower()
-        if file_extension not in {".png", ".jpg", ".jpeg", ".webp"}:
-            raise HTTPException(status_code=400, detail="Unsupported image format.")
-
-        image_bytes = await upload.read()
-        image_base64 = base64.b64encode(image_bytes).decode("utf-8")
-
-        try:
-            ingredients = await parse_image_node(image_base64)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-        return ingredients
 
 
 @app.post("/submit", response_class=HTMLResponse)

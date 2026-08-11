@@ -47,34 +47,5 @@ export function useNutritionAgent() {
     }
   }
 
-  async function parsePantryImage(file: File) {
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const formData = new FormData();
-      formData.append('upload', file);
-
-      const response = await fetch('http://127.0.0.1:8001/parse-image', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const message = await response.text();
-        throw new Error(message || `Failed to parse image: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (err) {
-      console.error('Image parsing error:', err);
-      setError(err instanceof Error ? err.message : 'Unexpected error');
-      return null;
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  return { state, isLoading, error, generateRecipe, parsePantryImage };
+  return { state, isLoading, error, generateRecipe };
 }

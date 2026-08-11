@@ -1,10 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import os
-
-from groq import Groq
 
 from schemas import AppState, IngredientInput, MacroFit, MealPlan, Recipe, ScraperItem, ScraperResults
 
@@ -444,62 +440,7 @@ async def vision_node(state: AppState) -> AppState:
     return state
 
 
-async def parse_image_node(image_base64: str) -> list[IngredientInput]:
-    client = genai.Client()
-
-    prompt = (
-        "You are a helpful assistant that extracts raw pantry ingredients and estimates their weights/quantities in grams, ml, or whole units. "
-        "Ignore cooked leftovers or condiments like ketchup. Return a valid JSON array of objects with fields: name, amount, unit. "
-        "For unit, use only 'g', 'ml', or 'whole'. "
-        "Do not include any extra explanation outside the JSON array."
-    )
-
-    chat = client.chats.create(
-        model="gemini-2.5-flash",
-        history=[
-            types.Content(parts=[types.Part(text="You are a helpful assistant that extracts raw pantry ingredients and quantities from a fridge image.")]),
-            types.Content(parts=[types.Part(text=f"{prompt}\n\nImage base64: {image_base64}")]),
-        ],
-    )
-
-    response = chat.send_message("")
-    output_text = None
-    if response.candidates:
-        if response.candidates[0].content and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                if part.text:
-                    output_text = part.text.strip()
-                    break
-
-    if output_text is None:
-        raise RuntimeError("Gemini did not return any text in the response candidates.")
-
-    try:
-        parsed = json.loads(output_text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Failed to decode Gemini response as JSON: {exc}\nResponse was: {output_text}") from exc
-
-    if not isinstance(parsed, list):
-        raise RuntimeError(f"Expected JSON array from Gemini vision parser, got: {type(parsed).__name__}")
-
-    ingredients: list[IngredientInput] = []
-    for item in parsed:
-        if not isinstance(item, dict):
-            raise RuntimeError("Each pantry item must be a JSON object.")
-        ingredient = IngredientInput(
-            id=item.get("id") or None,
-            name=str(item.get("name", "")).strip(),
-            amount=float(item.get("amount", 0) or 0),
-            unit=str(item.get("unit", "g")),
-        )
-        ingredients.append(ingredient)
-
-    return ingredients
-
-
 async def chef_node(state: AppState) -> AppState:
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-    
     exact_ingredient_names = [
         ingredient.name.strip() for ingredient in state.ingredients if ingredient.name.strip()
     ]
@@ -514,107 +455,105 @@ async def chef_node(state: AppState) -> AppState:
         inventory.update(name.lower() for name in exact_ingredient_names)
 
     state.available_inventory = sorted(inventory)
-    inventory_str = ", ".join(state.available_inventory)
-    
-    if state.mode == "full_day":
-        mode_instructions = "You must output a full day MealPlan consisting of exactly 3 or 4 distinct meals that together divide and meet the target macros."
-        schema_description = """Return a JSON object matching this schema:
-{
-  "meals": [
-    {
-      "name": "string",
-      "meal_type": "string",
-      "cuisine": "string",
-      "ingredients": [{"name": "string", "amount": number, "unit": "string", "calories": number, "protein": number, "carbs": number, "fat": number}],
-      "missing_ingredients": ["string"],
-      "instructions": ["string"],
-      "total_calories": number,
-      "total_protein": number,
-      "total_carbs": number,
-      "total_fat": number,
-      "tags": ["string"]
-    }
-  ]
-}"""
-    else:
-        mode_instructions = f"You must output a single Recipe for a {state.meal_type or 'Meal'} that meets the target macros."
-        schema_description = """Return a JSON object matching this schema:
-{
-  "name": "string",
-  "meal_type": "string",
-  "cuisine": "string",
-  "ingredients": [{"name": "string", "amount": number, "unit": "string", "calories": number, "protein": number, "carbs": number, "fat": number}],
-  "missing_ingredients": ["string"],
-  "instructions": ["string"],
-  "total_calories": number,
-  "total_protein": number,
-  "total_carbs": number,
-  "total_fat": number,
-  "tags": ["string"]
-}"""
 
-    cuisine_str = ", ".join(state.cuisine_preference) if state.cuisine_preference else "Any"
+    # STRICT ZERO HALLUCINATION POLICY:
+    # Use only the exact ingredient names provided by the user.
+    # If the user inputs 'chicken thighs', do not substitute 'chicken breast'.
+    # Do not add any items that were not explicitly provided unless they are
+    # specifically generated into the missing_ingredients list.
+    if exact_ingredient_names:
+        recipe_name = f"Custom {exact_ingredient_names[0].title()} Meal"
+        achieved = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+        for ingredient in state.ingredients:
+            macro_totals = estimate_macros(ingredient)
+            achieved["calories"] += macro_totals["calories"]
+            achieved["protein"] += macro_totals["protein"]
+            achieved["carbs"] += macro_totals["carbs"]
+            achieved["fat"] += macro_totals["fat"]
 
-    prompt = f"""You are an expert AI chef and nutritionist.
-The user wants a meal plan.
-Mode: {state.mode}
-{mode_instructions}
-
-Target Macros: Calories: {state.target_calories}, Protein: {state.target_protein}g, Carbs: {state.target_carbs}g, Fat: {state.target_fat}g
-Available Inventory in Pantry: {inventory_str if inventory_str else "None"}
-Cuisine Preferences: {cuisine_str}
-Provided User Ingredients to include: {", ".join(exact_ingredient_names) if exact_ingredient_names else "None"}
-
-CRITICAL RULES:
-1. Anti-Frankenstein Rule: DO NOT dump all ingredients into a single unholy mixture. Build logical, cohesive dishes.
-2. Macro Bridging: Add necessary ingredients to hit the macro targets. Any added ingredient NOT in the Available Inventory MUST be in the `missing_ingredients` array.
-3. Keep the recipes realistic and tasty.
-
-{schema_description}
-
-Respond with ONLY valid JSON. No markdown, no explanation."""
-
-    chat_completion = client.chat.completions.create(
-        messages=[{"role": "user", "content": prompt}],
-        model="llama-3.3-70b-versatile",
-        temperature=0.7,
-        response_format={"type": "json_object"},
-    )
-
-    raw_text = chat_completion.choices[0].message.content
-    if not raw_text:
-        raise RuntimeError("No response from Groq")
-        
-    try:
-        parsed = json.loads(raw_text)
-    except Exception as e:
-        raise RuntimeError("Failed to parse JSON: " + str(e))
-    
-    if state.mode == "full_day":
-        meal_plan = MealPlan(**parsed)
-        state.meal_plan = meal_plan
-        state.suggested_recipes = meal_plan.meals
-        if meal_plan.meals:
-            state.generated_recipe = meal_plan.meals[0]
-            state.recipe = meal_plan.meals[0]
-            
-        daily_missing = []
-        for meal in meal_plan.meals:
-            daily_missing.extend(meal.missing_ingredients)
-        state.missing_ingredients = sorted(set(daily_missing))
-    else:
-        recipe = Recipe(**parsed)
-        state.suggested_recipes = [recipe]
-        state.generated_recipe = recipe
-        state.recipe = recipe
-        state.meal_plan = MealPlan(
-            meals=[recipe],
-            total_calories=recipe.macro_fit.calories_achieved if recipe.macro_fit else 0,
-            total_protein=recipe.macro_fit.protein_achieved if recipe.macro_fit else 0,
-            total_carbs=recipe.macro_fit.carbs_achieved if recipe.macro_fit else 0,
-            total_fat=recipe.macro_fit.fat_achieved if recipe.macro_fit else 0,
+        custom_recipe = Recipe(
+            title=recipe_name,
+            cuisine=state.cuisine_preference[0] if state.cuisine_preference else "Custom",
+            meal_type=state.meal_type or "Lunch",
+            ingredients=[ingredient for ingredient in state.ingredients],
+            instructions=create_realistic_instructions(state.ingredients, state.meal_type or "Lunch"),
+            macro_fit=build_macro_fit(state, achieved),
+            missing_ingredients=[
+                ingredient.name
+                for ingredient in state.ingredients
+                if ingredient.name.strip().lower() not in inventory and ingredient.name.strip().lower() != "water"
+            ],
         )
-        state.missing_ingredients = recipe.missing_ingredients.copy()
+        custom_recipe = bridge_macro_gaps(state, custom_recipe, inventory)
+
+        if state.mode == "full_day":
+            meals, daily_missing = split_full_day_plan(state, custom_recipe, custom_recipe.missing_ingredients)
+            state.suggested_recipes = meals
+            state.generated_recipe = meals[0] if meals else custom_recipe
+            state.recipe = meals[0] if meals else custom_recipe
+            state.meal_plan = MealPlan(
+                meals=meals,
+                total_calories=sum(meal.macro_fit.calories_achieved for meal in meals),
+                total_protein=sum(meal.macro_fit.protein_achieved for meal in meals),
+                total_carbs=sum(meal.macro_fit.carbs_achieved for meal in meals),
+                total_fat=sum(meal.macro_fit.fat_achieved for meal in meals),
+            )
+            state.missing_ingredients = daily_missing
+        else:
+            state.suggested_recipes = [custom_recipe]
+            state.generated_recipe = custom_recipe
+            state.recipe = custom_recipe
+            state.meal_plan = MealPlan(
+                meals=[custom_recipe],
+                total_calories=custom_recipe.macro_fit.calories_achieved,
+                total_protein=custom_recipe.macro_fit.protein_achieved,
+                total_carbs=custom_recipe.macro_fit.carbs_achieved,
+                total_fat=custom_recipe.macro_fit.fat_achieved,
+            )
+            state.missing_ingredients = custom_recipe.missing_ingredients.copy()
+    else:
+        available = filter_by_cuisine(RECIPE_BANK, state.cuisine_preference)
+        available = [recipe for recipe in available if recipe_matches_inventory(recipe, state.available_inventory)]
+        available = apply_anti_boredom(available, state.recipe_history)
+        suggestions = choose_suggested_recipes(state, available)
+
+        if state.mode == "full_day" and suggestions:
+            base_recipe = suggestions[0]
+            base_recipe = bridge_macro_gaps(state, base_recipe, inventory)
+            meals, daily_missing = split_full_day_plan(state, base_recipe, base_recipe.missing_ingredients)
+            state.suggested_recipes = meals
+            state.generated_recipe = meals[0]
+            state.recipe = meals[0]
+            state.meal_plan = MealPlan(
+                meals=meals,
+                total_calories=sum(meal.macro_fit.calories_achieved for meal in meals),
+                total_protein=sum(meal.macro_fit.protein_achieved for meal in meals),
+                total_carbs=sum(meal.macro_fit.carbs_achieved for meal in meals),
+                total_fat=sum(meal.macro_fit.fat_achieved for meal in meals),
+            )
+            state.missing_ingredients = daily_missing
+        else:
+            state.suggested_recipes = suggestions
+            state.generated_recipe = suggestions[0] if suggestions else None
+            state.recipe = state.generated_recipe
+            state.meal_plan = MealPlan(
+                meals=suggestions,
+                total_calories=sum(recipe.macro_fit.calories_achieved for recipe in suggestions),
+                total_protein=sum(recipe.macro_fit.protein_achieved for recipe in suggestions),
+                total_carbs=sum(recipe.macro_fit.carbs_achieved for recipe in suggestions),
+                total_fat=sum(recipe.macro_fit.fat_achieved for recipe in suggestions),
+            )
+
+            if state.generated_recipe:
+                state.recipe_history.append(state.generated_recipe.name)
+                state.generated_recipe.missing_ingredients = [
+                    ingredient.name
+                    for ingredient in state.generated_recipe.ingredients
+                    if ingredient.name.strip().lower() not in inventory and ingredient.name.strip().lower() != "water"
+                ]
+                state.missing_ingredients = state.generated_recipe.missing_ingredients.copy()
+
+    state.validate_zero_waste()
 
     return state
 
