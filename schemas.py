@@ -115,3 +115,28 @@ class AppState(BaseModel):
                 raise ValueError(
                     "generated_recipe.missing_ingredients must exactly reflect recipe ingredients not in available_inventory"
                 )
+
+class AuthState(BaseModel):
+    logged_in: bool = False
+    username: str | None = None
+
+class UserProfile(BaseModel):
+    username: str
+    password_hash: str | None = None
+    target_calories: int = 2000
+    target_protein: int = 150
+    target_carbs: int = 200
+    target_fat: int = 60
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+class LogMealRequest(BaseModel):
+    username: str
+    date: str
+    recipe: Recipe

@@ -11,8 +11,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
+import json
+import hashlib
 from main import run_workflow
-from schemas import AppState, IngredientInput
+from schemas import AppState, IngredientInput, Recipe, UserProfile, LoginRequest, LogMealRequest, RegisterRequest
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -163,3 +165,130 @@ async def submit(
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+SAVED_MEALS_FILE = BASE_DIR / "saved_meals.json"
+
+def get_saved_meals() -> list[dict]:
+    if not SAVED_MEALS_FILE.exists():
+        return []
+    with SAVED_MEALS_FILE.open("r") as f:
+        try:
+            return json.load(f)
+        except json.JSONDecodeError:
+            return []
+
+@app.post("/save_meal")
+async def save_meal(recipe: Recipe) -> dict:
+    meals = get_saved_meals()
+    meals.append(recipe.model_dump())
+    with SAVED_MEALS_FILE.open("w") as f:
+        json.dump(meals, f, indent=2)
+    return {"status": "success"}
+
+@app.get("/saved_meals")
+async def fetch_saved_meals() -> list[dict]:
+    return get_saved_meals()
+
+USERS_FILE = BASE_DIR / "users.json"
+LOGS_FILE = BASE_DIR / "daily_logs.json"
+
+def get_users() -> dict:
+    if not USERS_FILE.exists(): return {}
+    with USERS_FILE.open("r") as f:
+        try: return json.load(f)
+        except json.JSONDecodeError: return {}
+
+def save_users(users: dict):
+    with USERS_FILE.open("w") as f:
+        json.dump(users, f, indent=2)
+
+def get_logs() -> dict:
+    if not LOGS_FILE.exists(): return {}
+    with LOGS_FILE.open("r") as f:
+        try: return json.load(f)
+        except json.JSONDecodeError: return {}
+
+def save_logs(logs: dict):
+    with LOGS_FILE.open("w") as f:
+        json.dump(logs, f, indent=2)
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
+@app.post("/register")
+async def register(req: RegisterRequest) -> UserProfile:
+    users = get_users()
+    if req.username in users:
+        raise HTTPException(status_code=400, detail="Username already exists")
+    
+    new_user = UserProfile(
+        username=req.username,
+        password_hash=hash_password(req.password)
+    )
+    users[req.username] = new_user.model_dump()
+    save_users(users)
+    return new_user
+
+@app.post("/login")
+async def login(req: LoginRequest) -> UserProfile:
+    users = get_users()
+    if req.username not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user_data = users[req.username]
+    if user_data.get("password_hash") != hash_password(req.password):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+        
+    return UserProfile(**user_data)
+
+@app.post("/update_profile")
+async def update_profile(profile: UserProfile) -> dict:
+    users = get_users()
+    users[profile.username] = profile.model_dump()
+    save_users(users)
+    return {"status": "success"}
+
+@app.post("/log_daily_meal")
+async def log_daily_meal(req: LogMealRequest) -> dict:
+    logs = get_logs()
+    key = f"{req.username}_{req.date}"
+    if key not in logs:
+        logs[key] = []
+    logs[key].append(req.recipe.model_dump())
+    save_logs(logs)
+    return {"status": "success"}
+
+@app.get("/daily_summary")
+async def daily_summary(username: str, date: str) -> dict:
+    logs = get_logs()
+    key = f"{username}_{date}"
+    day_logs = logs.get(key, [])
+    
+    users = get_users()
+    if username not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    profile = UserProfile(**users[username])
+    
+    consumed = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    for meal in day_logs:
+        if "macro_fit" in meal and meal["macro_fit"]:
+            consumed["calories"] += meal["macro_fit"].get("calories_achieved", 0)
+            consumed["protein"] += meal["macro_fit"].get("protein_achieved", 0)
+            consumed["carbs"] += meal["macro_fit"].get("carbs_achieved", 0)
+            consumed["fat"] += meal["macro_fit"].get("fat_achieved", 0)
+            
+    remaining = {
+        "calories": max(0, profile.target_calories - consumed["calories"]),
+        "protein": max(0, profile.target_protein - consumed["protein"]),
+        "carbs": max(0, profile.target_carbs - consumed["carbs"]),
+        "fat": max(0, profile.target_fat - consumed["fat"]),
+    }
+    
+    return {
+        "profile": profile.model_dump(),
+        "consumed": consumed,
+        "remaining": remaining,
+        "meals": day_logs
+    }

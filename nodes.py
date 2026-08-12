@@ -321,6 +321,7 @@ You must strictly adhere to the flavor profiles and cooking techniques of {cuisi
 RULE 2: THE "NO-SLOP" MANDATE (SEPARATION OF CONCERNS): NEVER mix incompatible ingredients into a single bowl or pot just because the user provided them. If the user provides Chicken, Pasta, and Black Beans, structure the recipe properly: "Pan-Seared Chicken" (Main) with "Garlic Pasta" (Side 1) and "Spiced Beans" (Side 2). Cook them separately.
 RULE 3: ZERO HALLUCINATION & INGREDIENT FILTERING: You must use the user's input ingredients as the foundation. However, if an input ingredient completely violates the {cuisine} profile, you must either serve it as a disconnected side dish OR explicitly state in the description how you creatively adapted it. Do NOT invent new primary proteins or carb bases that the user did not provide.
 RULE 4: REALISTIC BRIDGING: If you must add ingredients to hit the target macros, they MUST seamlessly fit the {cuisine}. (e.g., Do not add soy sauce to an Italian dish to hit sodium/flavor targets; use parmesan or capers).
+RULE 5: AUTHENTIC SPICING & NAMING: Explicitly define the exact spices, herbs, or masalas characteristic of {cuisine}. Do not just say "spices"; say "Garam Masala, Turmeric, and Cumin" for Indian, or "Oregano and Basil" for Italian. Ensure the "title" is a highly authentic and descriptive name for the dish (e.g. "Paneer Tikka Masala" instead of "Indian Cheese Bowl").
 
 Meal Type: {meal_type}
 Provided Ingredients: {ingredient_list}

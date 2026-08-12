@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { ArrowRight, CheckCircle2, Loader2, Sparkles, UploadCloud } from 'lucide-react';
+import { useMemo, useState, useEffect } from 'react';
+import { ArrowRight, CheckCircle2, Loader2, Sparkles, UploadCloud, X } from 'lucide-react';
 import { useNutritionAgent } from './hooks';
 
 const allCuisines = [
@@ -35,7 +35,19 @@ export default function Home() {
   const [targetProtein, setTargetProtein] = useState(130);
   const [targetCarbs, setTargetCarbs] = useState(180);
   const [targetFat, setTargetFat] = useState(60);
-  const { state, isLoading, error, generateRecipe, parsePantryImage } = useNutritionAgent();
+  const { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary } = useNutritionAgent();
+  const [isSavedMealsOpen, setIsSavedMealsOpen] = useState(false);
+  const [savedMeals, setSavedMeals] = useState<any[]>([]);
+  const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
+  const [savedStatus, setSavedStatus] = useState<Record<string, boolean>>({});
+
+  const [userProfile, setUserProfile] = useState<any>(null);
+  const [dailySummary, setDailySummary] = useState<any>(null);
+  const [usernameInput, setUsernameInput] = useState('');
+  const [passwordInput, setPasswordInput] = useState('');
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [isLogging, setIsLogging] = useState<Record<string, boolean>>({});
+  const [loggedStatus, setLoggedStatus] = useState<Record<string, boolean>>({});
 
   const meals = useMemo(() => {
     if (mode === 'full_day') {
@@ -96,9 +108,23 @@ export default function Home() {
       fat_target: targetFat,
       fat_achieved: 0,
       fat_delta: 0,
-      match_score_percentage: 0.0,
+      match_score_percentage: 0,
     };
   }, [recipe, targetCalories, targetProtein, targetCarbs, targetFat]);
+
+  const categorizedMeals = useMemo(() => {
+    const meals = dailySummary?.meals || [];
+    return {
+      Breakfast: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'breakfast'),
+      Lunch: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'lunch'),
+      Dinner: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'dinner'),
+      Snacks: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'snack'),
+      Other: meals.filter((m: any) => {
+        const type = m.meal_type?.toLowerCase();
+        return !['breakfast', 'lunch', 'dinner', 'snack'].includes(type);
+      }),
+    };
+  }, [dailySummary]);
 
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
 
@@ -120,36 +146,246 @@ export default function Home() {
     setSelectedImage(null);
   }
 
+  const getTodayString = () => new Date().toISOString().split('T')[0];
+
+  useEffect(() => {
+    const saved = localStorage.getItem('userProfile');
+    if (saved) {
+      setUserProfile(JSON.parse(saved));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (userProfile) {
+      localStorage.setItem('userProfile', JSON.stringify(userProfile));
+      setTargetCalories(userProfile.target_calories);
+      setTargetProtein(userProfile.target_protein);
+      setTargetCarbs(userProfile.target_carbs);
+      setTargetFat(userProfile.target_fat);
+      fetchDailySummary(userProfile.username, getTodayString()).then(setDailySummary);
+    }
+  }, [userProfile]);
+
+  async function handleUpdateProfile() {
+    if (!userProfile) return;
+    const profile = {
+      username: userProfile.username,
+      target_calories: targetCalories,
+      target_protein: targetProtein,
+      target_carbs: targetCarbs,
+      target_fat: targetFat,
+    };
+    await updateProfile(profile);
+    setUserProfile(profile);
+  }
+
+  async function handleLogin() {
+    if (!usernameInput.trim() || !passwordInput.trim()) return;
+    const profile = await login(usernameInput.trim(), passwordInput.trim());
+    if (profile) setUserProfile(profile);
+  }
+
+  async function handleRegister() {
+    if (!usernameInput.trim() || !passwordInput.trim()) return;
+    const profile = await register(usernameInput.trim(), passwordInput.trim());
+    if (profile) setUserProfile(profile);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('nutrition_agent_profile');
+    setUserProfile(null);
+  }
+
+  async function handleLogMeal(recipeToLog: any) {
+    if (!userProfile || !recipeToLog) return;
+    setIsLogging(prev => ({ ...prev, [recipeToLog.name]: true }));
+    const result = await logDailyMeal(userProfile.username, getTodayString(), recipeToLog);
+    if (result) {
+      setLoggedStatus(prev => ({ ...prev, [recipeToLog.name]: true }));
+      const newSummary = await fetchDailySummary(userProfile.username, getTodayString());
+      setDailySummary(newSummary);
+    }
+    setIsLogging(prev => ({ ...prev, [recipeToLog.name]: false }));
+  }
+
   async function handleGenerate() {
+    const activeCalories = dailySummary ? dailySummary.remaining.calories : targetCalories;
+    const activeProtein = dailySummary ? dailySummary.remaining.protein : targetProtein;
+    const activeCarbs = dailySummary ? dailySummary.remaining.carbs : targetCarbs;
+    const activeFat = dailySummary ? dailySummary.remaining.fat : targetFat;
+
     const payload = {
       user_prompt: ingredients.map((item) => item.name).filter(Boolean).join(', '),
       mode,
       meal_type: mealType,
       cuisine_preference: selectedCuisines,
-      target_calories: targetCalories,
-      target_protein: targetProtein,
-      target_carbs: targetCarbs,
-      target_fat: targetFat,
+      target_calories: activeCalories,
+      target_protein: activeProtein,
+      target_carbs: activeCarbs,
+      target_fat: activeFat,
       ingredients,
     };
 
     await generateRecipe(payload);
+    setLoggedStatus({});
+    setSavedStatus({});
+  }
+
+  async function handleSaveMeal(recipeToSave: any) {
+    if (!recipeToSave || savedStatus[recipeToSave.name]) return;
+    setIsSaving(prev => ({ ...prev, [recipeToSave.name]: true }));
+    const result = await saveMeal(recipeToSave);
+    if (result) {
+      setSavedStatus(prev => ({ ...prev, [recipeToSave.name]: true }));
+    }
+    setIsSaving(prev => ({ ...prev, [recipeToSave.name]: false }));
+  }
+
+  if (!userProfile) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl font-semibold text-white">
+              {isRegisterMode ? 'Create Account' : 'Welcome Back'}
+            </h1>
+            <p className="mt-2 text-slate-400">
+              {isRegisterMode
+                ? 'Create a new account to save your macros.'
+                : 'Enter your credentials to access your daily macro tracker.'}
+            </p>
+          </div>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
+              <input
+                type="text"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white focus:border-indigo-500 focus:outline-none"
+                placeholder="e.g. tharun"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && (isRegisterMode ? handleRegister() : handleLogin())}
+                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white focus:border-indigo-500 focus:outline-none"
+                placeholder="••••••••"
+              />
+            </div>
+            {error && <p className="text-rose-400 text-sm text-center">{error}</p>}
+            <button
+              onClick={isRegisterMode ? handleRegister : handleLogin}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 transition px-5 py-3 font-semibold text-white disabled:opacity-50"
+            >
+              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isRegisterMode ? 'Sign Up' : 'Sign In')}
+            </button>
+            <div className="text-center mt-4">
+              <button
+                onClick={() => setIsRegisterMode(!isRegisterMode)}
+                className="text-sm text-slate-400 hover:text-white transition"
+              >
+                {isRegisterMode ? 'Already have an account? Sign In' : 'Need an account? Create one'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
     <main className="min-h-screen px-6 py-8 lg:px-12">
-      <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[1.2fr_0.95fr]">
+      <div className="mx-auto grid max-w-[1400px] gap-6 xl:grid-cols-[280px_1.2fr_0.95fr]">
+        <div className="space-y-6">
+          <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-soft backdrop-blur-xl sticky top-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Your Logs</p>
+                <h2 className="text-xl font-semibold text-white mt-1">Daily Diary</h2>
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              {['Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Other'].map((category) => {
+                const meals = categorizedMeals[category as keyof typeof categorizedMeals];
+                if (category === 'Other' && meals.length === 0) return null;
+                
+                return (
+                  <div key={category} className="space-y-3">
+                    <h3 className="text-sm font-medium text-slate-400 flex items-center justify-between">
+                      {category}
+                      <span className="text-xs text-slate-500 bg-slate-800/50 px-2 py-0.5 rounded-full">{meals.length}</span>
+                    </h3>
+                    {meals.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-center text-xs text-slate-500">
+                        No {category.toLowerCase()} logged
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {meals.map((meal: any, idx: number) => (
+                          <div key={idx} className="rounded-2xl border border-white/5 bg-slate-950/70 p-3 shadow-sm">
+                            <p className="text-sm font-semibold text-white truncate" title={meal.title || meal.name}>
+                              {meal.title || meal.name}
+                            </p>
+                            <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                              <span className="text-emerald-400/90">{meal.macro_fit?.calories_achieved || 0} kcal</span>
+                              <span>•</span>
+                              <span className="text-indigo-400/90">{meal.macro_fit?.protein_achieved || 0}g P</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+
         <div className="space-y-6">
           <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Nutrition Agent</p>
-                <h1 className="mt-3 text-4xl font-semibold text-white">TSK Meal Dashboard</h1>
+                <div className="flex items-center justify-between mt-3">
+                  <h1 className="text-4xl font-semibold text-white">TSK Meal Dashboard</h1>
+                  <button
+                    onClick={handleLogout}
+                    className="rounded-2xl bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/20 transition"
+                  >
+                    Sign Out
+                  </button>
+                </div>
                 <p className="mt-3 max-w-2xl text-slate-400">Generate premium meal plans, grocery receipts, and macro summaries with AI-powered nutrition guidance.</p>
-              </div>
-              <div className="rounded-3xl bg-slate-950/80 border border-white/10 px-5 py-4 text-slate-300 shadow-lg">
-                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</p>
-                <p className="mt-2 text-2xl font-semibold text-emerald-300">{isLoading ? 'Cooking AI plans…' : 'Ready to craft meals'}</p>
+                <div className="mt-6 flex flex-col gap-4">
+                  <div className="rounded-3xl bg-slate-950/80 border border-white/10 px-5 py-4 text-slate-300 shadow-lg">
+                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</p>
+                    <p className="mt-1 font-semibold flex items-center gap-2 text-emerald-300">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                      </span>
+                      {isLoading ? 'Cooking AI plans…' : 'Ready to craft meals'}
+                    </p>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setIsSavedMealsOpen(true);
+                      const meals = await fetchSavedMeals();
+                      setSavedMeals(meals);
+                    }}
+                    className="rounded-3xl bg-indigo-500/20 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/30 text-center"
+                  >
+                    View Saved Meals
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -337,7 +573,16 @@ export default function Home() {
                 ) : null}
 
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                  <label className="text-sm font-semibold text-slate-300">Macro targets</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-semibold text-slate-300">Your Daily Macro Targets</label>
+                    <button
+                      onClick={handleUpdateProfile}
+                      disabled={isLoading}
+                      className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition"
+                    >
+                      {isLoading ? 'Updating...' : 'Save Profile'}
+                    </button>
+                  </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="space-y-2 text-sm text-slate-300">
                       Target Calories
@@ -345,7 +590,7 @@ export default function Home() {
                         type="number"
                         value={targetCalories}
                         onChange={(event) => setTargetCalories(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
+                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
                       />
                     </label>
                     <label className="space-y-2 text-sm text-slate-300">
@@ -354,7 +599,7 @@ export default function Home() {
                         type="number"
                         value={targetProtein}
                         onChange={(event) => setTargetProtein(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
+                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
                       />
                     </label>
                     <label className="space-y-2 text-sm text-slate-300">
@@ -363,7 +608,7 @@ export default function Home() {
                         type="number"
                         value={targetCarbs}
                         onChange={(event) => setTargetCarbs(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
+                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
                       />
                     </label>
                     <label className="space-y-2 text-sm text-slate-300">
@@ -372,7 +617,7 @@ export default function Home() {
                         type="number"
                         value={targetFat}
                         onChange={(event) => setTargetFat(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
+                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
                       />
                     </label>
                   </div>
@@ -388,65 +633,158 @@ export default function Home() {
                 </button>
               </div>
             </section>
-
-            <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Macro report</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Macro Match & Delta</h2>
-                </div>
-                <div className="inline-flex items-center gap-2 rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
-                  <span>🟢</span>
-                  <span>{macroFit.match_score_percentage}% Match</span>
-                </div>
-              </div>
-
-              <div className="mt-8 grid gap-5">
-                <div className="grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                  <div className="grid gap-4 sm:grid-cols-2">
+            
+            <div className="space-y-6">
+              {dailySummary && (
+                <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
+                  <div className="flex items-center justify-between gap-4 mb-6">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Daily Tracker</p>
+                      <h2 className="mt-2 text-2xl font-semibold text-white">Remaining Macros</h2>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                     {[
-                      { label: 'Calories', target: macroFit.calories_target, actual: macroFit.calories_achieved, delta: macroFit.calories_delta },
-                      { label: 'Protein', target: macroFit.protein_target, actual: macroFit.protein_achieved, delta: macroFit.protein_delta },
-                      { label: 'Carbs', target: macroFit.carbs_target, actual: macroFit.carbs_achieved, delta: macroFit.carbs_delta },
-                      { label: 'Fat', target: macroFit.fat_target, actual: macroFit.fat_achieved, delta: macroFit.fat_delta },
-                    ].map((item) => {
-                      const unit = item.label !== 'Calories' ? 'g' : ' kcal';
-                      const isOverFat = item.label === 'Fat' && item.delta > 0;
-                      const deltaColor = isOverFat
-                        ? 'text-amber-400 font-medium'
-                        : item.delta > 0
-                        ? 'text-emerald-300'
-                        : item.delta < 0
-                        ? 'text-rose-300'
-                        : 'text-slate-400';
-                      const deltaText = item.delta > 0
-                        ? `+${item.delta}${unit}${isOverFat ? ' (over target)' : ''}`
-                        : item.delta < 0
-                        ? `${item.delta}${unit}`
-                        : 'On target';
-                      return (
-                        <div key={item.label} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                          <p className="text-sm text-slate-400">{item.label}</p>
-                          <p className="mt-2 text-xl font-semibold text-white">{item.actual} / {item.target}{unit}</p>
-                          <p className={`mt-1 text-sm ${deltaColor}`}>{deltaText}</p>
-                        </div>
-                      );
-                    })}
+                      { label: 'Calories', val: dailySummary.remaining.calories, color: 'text-sky-300' },
+                      { label: 'Protein', val: `${dailySummary.remaining.protein}g`, color: 'text-indigo-300' },
+                      { label: 'Carbs', val: `${dailySummary.remaining.carbs}g`, color: 'text-amber-300' },
+                      { label: 'Fat', val: `${dailySummary.remaining.fat}g`, color: 'text-rose-300' }
+                    ].map(macro => (
+                      <div key={macro.label} className="flex flex-col items-center justify-center rounded-2xl bg-slate-950/70 p-4 border border-white/5">
+                        <span className={`text-xl font-bold ${macro.color}`}>{macro.val}</span>
+                        <span className="text-xs text-slate-400 mt-1 uppercase tracking-wider">{macro.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Macro report</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-white">Macro Match & Delta</h2>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
+                    <span>🟢</span>
+                    <span>{macroFit.match_score_percentage}% Match</span>
                   </div>
                 </div>
-              </div>
-            </section>
+
+                <div className="mt-8 grid gap-5">
+                  <div className="grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {[
+                        { label: 'Calories', target: macroFit.calories_target, actual: macroFit.calories_achieved, delta: macroFit.calories_delta },
+                        { label: 'Protein', target: macroFit.protein_target, actual: macroFit.protein_achieved, delta: macroFit.protein_delta },
+                        { label: 'Carbs', target: macroFit.carbs_target, actual: macroFit.carbs_achieved, delta: macroFit.carbs_delta },
+                        { label: 'Fat', target: macroFit.fat_target, actual: macroFit.fat_achieved, delta: macroFit.fat_delta },
+                      ].map((item) => {
+                        const unit = item.label !== 'Calories' ? 'g' : ' kcal';
+                        const isOverFat = item.label === 'Fat' && item.delta > 0;
+                        const deltaColor = isOverFat
+                          ? 'text-amber-400 font-medium'
+                          : item.delta > 0
+                          ? 'text-emerald-300'
+                          : item.delta < 0
+                          ? 'text-rose-300'
+                          : 'text-slate-400';
+                        const deltaText = item.delta > 0
+                          ? `+${item.delta}${unit}`
+                          : item.delta < 0
+                          ? `${item.delta}${unit}`
+                          : `Match`;
+
+                        return (
+                          <div key={item.label} className="rounded-2xl bg-slate-900/80 p-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-slate-400">{item.label}</span>
+                              <span className={`text-xs ${deltaColor}`}>{deltaText}</span>
+                            </div>
+                            <div className="mt-2 flex items-baseline gap-2">
+                              <span className="text-xl font-bold text-slate-200">{item.actual}</span>
+                              <span className="text-xs text-slate-500">/ {item.target}{unit}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
           </div>
 
           <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">
-                  {mode === 'full_day'
-                    ? `Full Day Plan — ${meals?.length ? meals.length : 0} Meal${meals?.length !== 1 ? 's' : ''}`
-                    : 'Single Meal Plan'}
-                </h2>
+                <div className="flex items-center gap-4">
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    {mode === 'full_day'
+                      ? `Full Day Plan — ${meals?.length ? meals.length : 0} Meal${meals?.length !== 1 ? 's' : ''}`
+                      : 'Single Meal Plan'}
+                  </h2>
+                  {mode === 'single_meal' && recipe && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleSaveMeal(recipe)}
+                        disabled={isSaving[recipe.name]}
+                        className={`mt-2 flex items-center gap-2 rounded-2xl px-4 py-1.5 text-sm font-semibold transition ${
+                          savedStatus[recipe.name]
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
+                        }`}
+                      >
+                        {savedStatus[recipe.name] ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4" />
+                            Saved
+                          </>
+                        ) : isSaving[recipe.name] ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Saving
+                          </>
+                        ) : (
+                          'Save Meal'
+                        )}
+                      </button>
+                      
+                      <button
+                        onClick={() => handleLogMeal(recipe)}
+                        disabled={isLogging[recipe.name]}
+                        className={`mt-2 flex items-center gap-2 rounded-2xl px-4 py-1.5 text-sm font-semibold transition ${
+                          loggedStatus[recipe.name]
+                            ? 'bg-emerald-500/20 text-emerald-300'
+                            : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
+                        }`}
+                      >
+                        {loggedStatus[recipe.name] ? (
+                          <>
+                            <CheckCircle2 className="h-4 w-4" />
+                            Logged
+                          </>
+                        ) : isLogging[recipe.name] ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Logging
+                          </>
+                        ) : (
+                          'Log to Today'
+                        )}
+                      </button>
+                      <button
+                        onClick={handleGenerate}
+                        disabled={isLoading}
+                        className="mt-2 flex items-center gap-2 rounded-2xl bg-rose-500/20 px-4 py-1.5 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/30 disabled:opacity-50"
+                      >
+                        <Sparkles className="h-4 w-4" />
+                        Regenerate
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">High protein</div>
             </div>
@@ -459,7 +797,66 @@ export default function Home() {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">{meal.meal_type}</h3>
-                          <p className="mt-2 text-xl font-semibold text-white">{meal.title || meal.name}</p>
+                          <div className="flex items-center gap-4 mt-2">
+                            <p className="text-xl font-semibold text-white">{meal.title || meal.name}</p>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => handleSaveMeal(meal)}
+                                disabled={isSaving[meal.name]}
+                                className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
+                                  savedStatus[meal.name]
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
+                                }`}
+                              >
+                                {savedStatus[meal.name] ? (
+                                  <>
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Saved
+                                  </>
+                                ) : isSaving[meal.name] ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Saving
+                                  </>
+                                ) : (
+                                  'Save Meal'
+                                )}
+                              </button>
+                              
+                              <button
+                                onClick={() => handleLogMeal(meal)}
+                                disabled={isLogging[meal.name]}
+                                className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
+                                  loggedStatus[meal.name]
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
+                                }`}
+                              >
+                                {loggedStatus[meal.name] ? (
+                                  <>
+                                    <CheckCircle2 className="h-3 w-3" />
+                                    Logged
+                                  </>
+                                ) : isLogging[meal.name] ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                    Logging
+                                  </>
+                                ) : (
+                                  'Log to Today'
+                                )}
+                              </button>
+                              <button
+                                onClick={handleGenerate}
+                                disabled={isLoading}
+                                className="flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition disabled:opacity-50"
+                              >
+                                <Sparkles className="h-3 w-3" />
+                                Regenerate
+                              </button>
+                            </div>
+                          </div>
                         </div>
                         <div className="rounded-3xl bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
                           {meal.macro_fit.calories_achieved} kcal • {meal.macro_fit.protein_achieved}g P
@@ -609,6 +1006,79 @@ export default function Home() {
           ) : null}
         </div>
       </div>
+      {isSavedMealsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
+          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-[2rem] border border-white/10 bg-slate-900 shadow-2xl p-8">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-2xl font-semibold text-white">Your Saved Meals</h2>
+                <p className="mt-1 text-sm text-slate-400">Recipes you've logged and saved for later.</p>
+              </div>
+              <button
+                onClick={() => setIsSavedMealsOpen(false)}
+                className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white transition"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            
+            {savedMeals.length === 0 ? (
+              <div className="rounded-3xl border border-dashed border-white/20 bg-slate-950/50 p-12 text-center text-slate-500">
+                You haven't saved any meals yet. Generate a recipe and click "Save Meal" to see it here!
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {savedMeals.map((meal: any, idx: number) => (
+                  <div key={idx} className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">{meal.meal_type || 'Custom'}</h3>
+                        <p className="mt-1 text-xl font-semibold text-white">{meal.title || meal.name}</p>
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={() => handleLogMeal(meal)}
+                            disabled={isLogging[meal.name]}
+                            className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
+                              loggedStatus[meal.name]
+                                ? 'bg-emerald-500/20 text-emerald-300'
+                                : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
+                            }`}
+                          >
+                            {loggedStatus[meal.name] ? (
+                              <>
+                                <CheckCircle2 className="h-3 w-3" />
+                                Logged
+                              </>
+                            ) : isLogging[meal.name] ? (
+                              <>
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Logging
+                              </>
+                            ) : (
+                              'Log to Today'
+                              )}
+                            </button>
+                            <button
+                              onClick={handleGenerate}
+                              disabled={isLoading}
+                              className="flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition disabled:opacity-50"
+                            >
+                              <Sparkles className="h-3 w-3" />
+                              Regenerate
+                            </button>
+                          </div>
+                      </div>
+                      <div className="rounded-3xl bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
+                        {meal.macro_fit?.calories_achieved || 0} kcal • {meal.macro_fit?.protein_achieved || 0}g P
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   );
 }
