@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
+from dotenv import load_dotenv
+
 from schemas import AppState
 from nodes import chef_node, scraper_node, vision_node, parse_image_node
+
+load_dotenv(".env")
 
 
 try:

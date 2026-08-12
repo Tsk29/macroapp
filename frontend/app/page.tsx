@@ -144,7 +144,7 @@ export default function Home() {
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Nutrition Agent</p>
-                <h1 className="mt-3 text-4xl font-semibold text-white">Bento Meal Dashboard</h1>
+                <h1 className="mt-3 text-4xl font-semibold text-white">TSK Meal Dashboard</h1>
                 <p className="mt-3 max-w-2xl text-slate-400">Generate premium meal plans, grocery receipts, and macro summaries with AI-powered nutrition guidance.</p>
               </div>
               <div className="rounded-3xl bg-slate-950/80 border border-white/10 px-5 py-4 text-slate-300 shadow-lg">
@@ -290,7 +290,7 @@ export default function Home() {
 
                 <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
                   <label className="text-sm font-semibold text-slate-300">Choose cuisine</label>
-                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-3">
+                  <div className="flex flex-wrap gap-3 md:gap-4">
                     {allCuisines.map((cuisine) => {
                       const active = selectedCuisines.includes(cuisine.name);
                       return (
@@ -304,16 +304,16 @@ export default function Home() {
                                 : [...current, cuisine.name]
                             );
                           }}
-                          className={`inline-flex items-center gap-3 rounded-3xl border px-4 py-3 text-sm font-medium transition ${
+                          className={`inline-flex items-center gap-3 rounded-2xl border px-5 py-3 text-sm sm:text-base font-medium transition ${
                             active
-                              ? 'border-cyan-400/30 bg-cyan-400/10 text-white'
-                              : 'border-white/10 bg-slate-800/70 text-slate-200 hover:-translate-y-0.5 hover:bg-slate-700/80'
+                              ? 'border-cyan-400/30 bg-cyan-400/10 text-white shadow-[0_0_15px_rgba(34,211,238,0.1)]'
+                              : 'border-white/10 bg-slate-800/70 text-slate-200 hover:-translate-y-0.5 hover:bg-slate-700/80 hover:border-slate-500'
                           }`}
                         >
-                          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-950/80 text-lg shadow-soft">
+                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/80 text-xl shadow-inner">
                             {cuisine.emoji}
                           </span>
-                          <span className="truncate whitespace-nowrap overflow-hidden text-ellipsis">{cuisine.name}</span>
+                          <span className="tracking-wide">{cuisine.name}</span>
                         </button>
                       );
                     })}
@@ -409,16 +409,29 @@ export default function Home() {
                       { label: 'Protein', target: macroFit.protein_target, actual: macroFit.protein_achieved, delta: macroFit.protein_delta },
                       { label: 'Carbs', target: macroFit.carbs_target, actual: macroFit.carbs_achieved, delta: macroFit.carbs_delta },
                       { label: 'Fat', target: macroFit.fat_target, actual: macroFit.fat_achieved, delta: macroFit.fat_delta },
-                    ].map((item) => (
-                      <div key={item.label} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                        <p className="text-sm text-slate-400">{item.label}</p>
-                        <p className="mt-2 text-xl font-semibold text-white">{item.actual} / {item.target}{item.label !== 'Calories' ? 'g' : ' kcal'}</p>
-                        <p className={`mt-1 text-sm ${item.delta >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
-                          {item.delta >= 0 ? `+${item.delta}` : item.delta}
-                          {item.label !== 'Calories' ? 'g' : ' kcal'}
-                        </p>
-                      </div>
-                    ))}
+                    ].map((item) => {
+                      const unit = item.label !== 'Calories' ? 'g' : ' kcal';
+                      const isOverFat = item.label === 'Fat' && item.delta > 0;
+                      const deltaColor = isOverFat
+                        ? 'text-amber-400 font-medium'
+                        : item.delta > 0
+                        ? 'text-emerald-300'
+                        : item.delta < 0
+                        ? 'text-rose-300'
+                        : 'text-slate-400';
+                      const deltaText = item.delta > 0
+                        ? `+${item.delta}${unit}${isOverFat ? ' (over target)' : ''}`
+                        : item.delta < 0
+                        ? `${item.delta}${unit}`
+                        : 'On target';
+                      return (
+                        <div key={item.label} className="rounded-3xl border border-white/10 bg-slate-900/80 p-4">
+                          <p className="text-sm text-slate-400">{item.label}</p>
+                          <p className="mt-2 text-xl font-semibold text-white">{item.actual} / {item.target}{unit}</p>
+                          <p className={`mt-1 text-sm ${deltaColor}`}>{deltaText}</p>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -548,15 +561,20 @@ export default function Home() {
                 <span>{receipt.store}</span>
               </div>
               <div className="rounded-3xl bg-slate-900/80 p-4 text-slate-200">
-                {receipt.missing.map((item: any) => (
-                  <div key={item.name} className="flex items-center justify-between gap-4 border-b border-white/5 py-3 last:border-b-0">
-                    <div>
-                      <p className="text-sm text-slate-300">{item.name}</p>
-                      <p className="text-xs text-slate-500">Best price at {item.store}</p>
+                {receipt.missing.map((item: any) => {
+                  const showStoreBadge = receipt.store.includes(' & ');
+                  return (
+                    <div key={item.name} className="flex items-center justify-between gap-4 border-b border-white/5 py-3 last:border-b-0">
+                      <div>
+                        <p className="text-sm text-slate-300">{item.name}</p>
+                        {showStoreBadge ? (
+                          <p className="text-xs text-slate-500">Best price at {item.store}</p>
+                        ) : null}
+                      </div>
+                      <p className="font-semibold text-white">€{item.price.toFixed(2)}</p>
                     </div>
-                    <p className="font-semibold text-white">€{item.price.toFixed(2)}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               <div className="flex items-center justify-between rounded-3xl border border-white/10 bg-slate-900/80 px-5 py-4 text-sm text-slate-200">
                 <span>Total estimate</span>

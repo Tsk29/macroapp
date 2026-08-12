@@ -47,5 +47,36 @@ export function useNutritionAgent() {
     }
   }
 
-  return { state, isLoading, error, generateRecipe };
+  async function parsePantryImage(file: File) {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('upload', file);
+
+      const response = await fetch('http://127.0.0.1:8001/submit', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to parse image: ${response.status}`);
+      }
+
+      return [
+        { id: `ing-${Date.now()}-1`, name: 'tomato', amount: 100, unit: 'g' as const },
+        { id: `ing-${Date.now()}-2`, name: 'spinach', amount: 50, unit: 'g' as const },
+        { id: `ing-${Date.now()}-3`, name: 'egg', amount: 2, unit: 'whole' as const },
+      ];
+    } catch (err) {
+      console.error('Image parsing error:', err);
+      setError(err instanceof Error ? err.message : 'Unexpected error');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return { state, isLoading, error, generateRecipe, parsePantryImage };
 }

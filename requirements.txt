@@ -9,3 +9,5 @@ nest-asyncio
 playwright
 langchain
 google-genai
+chromadb
+duckduckgo-search

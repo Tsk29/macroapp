@@ -34,6 +34,7 @@ class Recipe(BaseModel):
     name: str | None = None
     cuisine: str | None = None
     meal_type: str | None = None
+    meal_structure: str | None = None
     prep_time_mins: int = 0
     ingredients: list[IngredientInput] = Field(default_factory=list)
     missing_ingredients: list[str] = Field(default_factory=list)
