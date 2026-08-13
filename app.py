@@ -255,7 +255,11 @@ async def log_daily_meal(req: LogMealRequest) -> dict:
     key = f"{req.username}_{req.date}"
     if key not in logs:
         logs[key] = []
-    logs[key].append(req.recipe.model_dump())
+    entry = req.recipe.model_dump()
+    # Attach shopping snapshot to this specific meal log entry
+    entry["shopping_cost"] = req.shopping_cost
+    entry["shopping_items"] = req.shopping_items
+    logs[key].append(entry)
     save_logs(logs)
     return {"status": "success"}
 
@@ -272,13 +276,18 @@ async def daily_summary(username: str, date: str) -> dict:
     profile = UserProfile(**users[username])
     
     consumed = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    total_shopping_cost = 0.0
+    all_shopping_items: list[dict] = []
+
     for meal in day_logs:
         if "macro_fit" in meal and meal["macro_fit"]:
             consumed["calories"] += meal["macro_fit"].get("calories_achieved", 0)
             consumed["protein"] += meal["macro_fit"].get("protein_achieved", 0)
             consumed["carbs"] += meal["macro_fit"].get("carbs_achieved", 0)
             consumed["fat"] += meal["macro_fit"].get("fat_achieved", 0)
-            
+        total_shopping_cost += meal.get("shopping_cost", 0.0)
+        all_shopping_items.extend(meal.get("shopping_items", []))
+
     remaining = {
         "calories": max(0, profile.target_calories - consumed["calories"]),
         "protein": max(0, profile.target_protein - consumed["protein"]),
@@ -290,5 +299,48 @@ async def daily_summary(username: str, date: str) -> dict:
         "profile": profile.model_dump(),
         "consumed": consumed,
         "remaining": remaining,
-        "meals": day_logs
+        "meals": day_logs,
+        "total_shopping_cost": round(total_shopping_cost, 2),
+        "shopping_items": all_shopping_items,
     }
+
+
+@app.get("/weekly_summary")
+async def weekly_summary(username: str, week_start: str) -> dict:
+    """Return 7 days of macro compliance starting from week_start (YYYY-MM-DD)."""
+    from datetime import date as date_cls, timedelta
+
+    users = get_users()
+    if username not in users:
+        raise HTTPException(status_code=404, detail="User not found")
+    profile = UserProfile(**users[username])
+    logs = get_logs()
+
+    start = date_cls.fromisoformat(week_start)
+    days = []
+    for i in range(7):
+        d = start + timedelta(days=i)
+        date_str = d.isoformat()
+        day_logs = logs.get(f"{username}_{date_str}", [])
+
+        consumed_cal = sum(
+            m.get("macro_fit", {}).get("calories_achieved", 0) for m in day_logs
+        )
+        consumed_prot = sum(
+            m.get("macro_fit", {}).get("protein_achieved", 0) for m in day_logs
+        )
+
+        cal_pct  = min(round((consumed_cal  / profile.target_calories  * 100) if profile.target_calories  else 0, 1), 100)
+        prot_pct = min(round((consumed_prot / profile.target_protein   * 100) if profile.target_protein   else 0, 1), 100)
+        # overall compliance = average of the two most important metrics
+        compliance = round((cal_pct + prot_pct) / 2, 1)
+
+        days.append({
+            "date": date_str,
+            "calories_pct": cal_pct,
+            "protein_pct": prot_pct,
+            "compliance": compliance,
+            "meal_count": len(day_logs),
+        })
+
+    return {"username": username, "week_start": week_start, "days": days}

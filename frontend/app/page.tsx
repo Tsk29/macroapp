@@ -1,158 +1,227 @@
 'use client';
 
 import { useMemo, useState, useEffect } from 'react';
-import { ArrowRight, CheckCircle2, Loader2, Sparkles, UploadCloud, X } from 'lucide-react';
+import {
+  ArrowRight, CheckCircle2, Loader2, Sparkles,
+  UploadCloud, X, UtensilsCrossed, Flame, Dumbbell,
+  Wheat, Droplets, LogOut, BookMarked, RefreshCw, Plus, Minus
+} from 'lucide-react';
 import { useNutritionAgent } from './hooks';
 
 const allCuisines = [
   { name: 'Mediterranean', emoji: '🥗' },
-  { name: 'Italian', emoji: '🍝' },
-  { name: 'Mexican', emoji: '🌮' },
-  { name: 'Asian', emoji: '🍜' },
-  { name: 'American', emoji: '🥩' },
-  { name: 'Greek', emoji: '🥙' },
+  { name: 'Italian',       emoji: '🍝' },
+  { name: 'Mexican',       emoji: '🌮' },
+  { name: 'Asian',         emoji: '🍜' },
+  { name: 'American',      emoji: '🥩' },
+  { name: 'Greek',         emoji: '🥙' },
 ];
-
-const initialRecipe = null;
 
 type IngredientInput = { id: string; name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
 
-const createIngredient = () => ({
+const createIngredient = (): IngredientInput => ({
   id: typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
-    : `ingredient-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    : `ing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
   name: '',
   amount: 0,
-  unit: 'g' as const,
+  unit: 'g',
 });
 
+const MEAL_EMOJIS: Record<string, string> = {
+  breakfast: '🌅', lunch: '☀️', dinner: '🌙', snack: '🍎', other: '🥄',
+};
+const MEAL_TIMES: Record<string, string> = {
+  breakfast: '8:00 AM', lunch: '12:30 PM', dinner: '7:00 PM', snack: '3:00 PM', other: '—',
+};
+const MEAL_FOOD_EMOJIS: Record<string, string> = {
+  breakfast: '🥣', lunch: '🥗', dinner: '🍽️', snack: '🍇', other: '🍴',
+};
+
+// ── Week calendar helpers ────────────────────────────────────────────────────
+function getWeekDays(today: Date) {
+  const days = [];
+  const start = new Date(today);
+  start.setDate(today.getDate() - 3);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    days.push(d);
+  }
+  return days;
+}
+const DAY_LABELS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+// ── MacroRing ────────────────────────────────────────────────────────────────
+function MacroRing({ pct, color, label, value }: { pct: number; color: string; label: string; value: string }) {
+  const r = 28; const c = 2 * Math.PI * r;
+  const offset = c - (Math.min(pct, 100) / 100) * c;
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative">
+        <svg width="72" height="72" viewBox="0 0 72 72" style={{ transform: 'rotate(-90deg)' }}>
+          <circle cx="36" cy="36" r={r} fill="none" stroke="rgba(45,85,54,0.10)" strokeWidth="8" />
+          <circle cx="36" cy="36" r={r} fill="none" stroke={color} strokeWidth="8"
+            strokeDasharray={c} strokeDashoffset={offset}
+            strokeLinecap="round" style={{ transition: 'stroke-dashoffset 1s ease' }} />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-sm font-bold" style={{ color }}>{Math.round(pct)}%</span>
+        </div>
+      </div>
+      <div className="text-center">
+        <div className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>{value}</div>
+        <div className="text-xs" style={{ color: 'var(--sage)' }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── LoginPage ────────────────────────────────────────────────────────────────
+function LoginPage({ onLogin, onRegister, error, isLoading }: {
+  onLogin: (u:string, p:string) => void;
+  onRegister: (u:string, p:string) => void;
+  error: string | null;
+  isLoading: boolean;
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [isReg, setIsReg] = useState(false);
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6"
+      style={{ background: 'linear-gradient(160deg, #eef7f1 0%, #c5e1cf 100%)' }}>
+      <div className="glass-card fade-up w-full max-w-md p-10">
+        {/* Logo */}
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
+            style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
+            <span className="text-3xl">🥗</span>
+          </div>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>
+            {isReg ? 'Create Account' : 'Welcome Back'}
+          </h1>
+          <p className="mt-1 text-sm" style={{ color: 'var(--sage)' }}>
+            {isReg ? 'Start tracking your daily macros.' : 'Sign in to your nutrition dashboard.'}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" style={{ color: 'var(--text-sub)' }}>Username</label>
+            <input className="field" placeholder="e.g. tharun" value={username} onChange={e => setUsername(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" style={{ color: 'var(--text-sub)' }}>Password</label>
+            <input className="field" type="password" placeholder="••••••••" value={password}
+              onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (isReg ? onRegister(username, password) : onLogin(username, password))} />
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <button
+            className="pill-btn pill-btn-green w-full mt-2"
+            disabled={isLoading}
+            onClick={() => isReg ? onRegister(username, password) : onLogin(username, password)}
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 spin" /> : <ArrowRight className="h-4 w-4" />}
+            {isReg ? 'Sign Up' : 'Sign In'}
+          </button>
+          <button onClick={() => setIsReg(!isReg)}
+            className="w-full text-center text-sm"
+            style={{ color: 'var(--sage)', background: 'none', border: 'none', cursor: 'pointer' }}>
+            {isReg ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main App ─────────────────────────────────────────────────────────────────
 export default function Home() {
+  const today = useMemo(() => new Date(), []);
+  const weekDays = useMemo(() => getWeekDays(today), [today]);
+  const [activeDay, setActiveDay] = useState(today.getDate());
+
   const [ingredients, setIngredients] = useState<IngredientInput[]>(() => [createIngredient()]);
   const [mode, setMode] = useState<'single_meal' | 'full_day'>('single_meal');
   const [mealType, setMealType] = useState('Lunch');
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>(['Mediterranean']);
   const [targetCalories, setTargetCalories] = useState(1900);
-  const [targetProtein, setTargetProtein] = useState(130);
-  const [targetCarbs, setTargetCarbs] = useState(180);
-  const [targetFat, setTargetFat] = useState(60);
-  const { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary } = useNutritionAgent();
-  const [isSavedMealsOpen, setIsSavedMealsOpen] = useState(false);
-  const [savedMeals, setSavedMeals] = useState<any[]>([]);
-  const [isSaving, setIsSaving] = useState<Record<string, boolean>>({});
-  const [savedStatus, setSavedStatus] = useState<Record<string, boolean>>({});
+  const [targetProtein, setTargetProtein]   = useState(130);
+  const [targetCarbs, setTargetCarbs]       = useState(180);
+  const [targetFat, setTargetFat]           = useState(60);
 
-  const [userProfile, setUserProfile] = useState<any>(null);
-  const [dailySummary, setDailySummary] = useState<any>(null);
-  const [usernameInput, setUsernameInput] = useState('');
-  const [passwordInput, setPasswordInput] = useState('');
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [isLogging, setIsLogging] = useState<Record<string, boolean>>({});
-  const [loggedStatus, setLoggedStatus] = useState<Record<string, boolean>>({});
+  const {
+    state, isLoading, error,
+    generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals,
+    login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary,
+  } = useNutritionAgent();
+
+  const [isSavedMealsOpen, setIsSavedMealsOpen] = useState(false);
+  const [savedMeals, setSavedMeals]           = useState<any[]>([]);
+  const [isSaving, setIsSaving]               = useState<Record<string, boolean>>({});
+  const [savedStatus, setSavedStatus]         = useState<Record<string, boolean>>({});
+  const [userProfile, setUserProfile]         = useState<any>(null);
+  const [dailySummary, setDailySummary]       = useState<any>(null);
+  const [weeklyData, setWeeklyData]           = useState<any[]>([]);
+  const [isLogging, setIsLogging]             = useState<Record<string, boolean>>({});
+  const [loggedStatus, setLoggedStatus]       = useState<Record<string, boolean>>({});
+  const [selectedImage, setSelectedImage]     = useState<File | null>(null);
+  const [activeTab, setActiveTab]             = useState<'build' | 'diary' | 'stats'>('build');
 
   const meals = useMemo(() => {
-    if (mode === 'full_day') {
-      return state?.meal_plan?.meals ?? [];
-    }
-
+    if (mode === 'full_day') return state?.meal_plan?.meals ?? [];
     return state?.generated_recipe ? [state.generated_recipe] : [];
   }, [mode, state]);
 
   const recipe = useMemo(() => meals[0] ?? undefined, [meals]);
 
-  const receipt = useMemo(
-    () => {
-      if (state?.scraper_results?.items?.length) {
-        const stores = Array.from(new Set(state.scraper_results.items.map((item: any) => item.store)));
-        return {
-          missing: state.scraper_results.items,
-          total: state.scraper_results.total_cost ?? 0,
-          store: stores.length > 1 ? stores.join(' & ') : stores[0] ?? 'Unknown',
-          cheapest: state.scraper_results.cheapest_store_overall ?? 'Unknown',
-        };
-      }
-
+  const receipt = useMemo(() => {
+    if (state?.scraper_results?.items?.length) {
+      const stores = Array.from(new Set(state.scraper_results.items.map((i: any) => i.store)));
       return {
-        missing: [],
-        total: 0,
-        store: 'None',
-        cheapest: 'None',
+        missing: state.scraper_results.items,
+        total: state.scraper_results.total_cost ?? 0,
+        store: stores.length > 1 ? stores.join(' & ') : stores[0] ?? 'Unknown',
+        cheapest: state.scraper_results.cheapest_store_overall ?? 'Unknown',
       };
-    },
-    [state],
-  ) as { missing: Array<{ name: string; store: string; price: number }>; total: number; store: string; cheapest: string };
+    }
+    return { missing: [], total: 0, store: 'None', cheapest: 'None' };
+  }, [state]);
 
   const recipeInstructions = useMemo(() => {
-    if (!recipe) {
-      return [];
-    }
-    if (Array.isArray(recipe.instructions)) {
-      return recipe.instructions;
-    }
-    return String(recipe.instructions)
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean);
+    if (!recipe) return [];
+    if (Array.isArray(recipe.instructions)) return recipe.instructions;
+    return String(recipe.instructions).split(/\n+/).map((l: string) => l.trim()).filter(Boolean);
   }, [recipe]);
 
-  const macroFit = useMemo(() => {
-    return recipe?.macro_fit ?? {
-      calories_target: targetCalories,
-      calories_achieved: 0,
-      calories_delta: 0,
-      protein_target: targetProtein,
-      protein_achieved: 0,
-      protein_delta: 0,
-      carbs_target: targetCarbs,
-      carbs_achieved: 0,
-      carbs_delta: 0,
-      fat_target: targetFat,
-      fat_achieved: 0,
-      fat_delta: 0,
-      match_score_percentage: 0,
-    };
+  const macroFit = useMemo(() => recipe?.macro_fit ?? {
+    calories_target: targetCalories, calories_achieved: 0, calories_delta: 0,
+    protein_target: targetProtein,   protein_achieved: 0,  protein_delta: 0,
+    carbs_target: targetCarbs,       carbs_achieved: 0,    carbs_delta: 0,
+    fat_target: targetFat,           fat_achieved: 0,      fat_delta: 0,
+    match_score_percentage: 0,
   }, [recipe, targetCalories, targetProtein, targetCarbs, targetFat]);
 
   const categorizedMeals = useMemo(() => {
-    const meals = dailySummary?.meals || [];
+    const mls = dailySummary?.meals || [];
     return {
-      Breakfast: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'breakfast'),
-      Lunch: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'lunch'),
-      Dinner: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'dinner'),
-      Snacks: meals.filter((m: any) => m.meal_type?.toLowerCase() === 'snack'),
-      Other: meals.filter((m: any) => {
-        const type = m.meal_type?.toLowerCase();
-        return !['breakfast', 'lunch', 'dinner', 'snack'].includes(type);
-      }),
+      Breakfast: mls.filter((m: any) => m.meal_type?.toLowerCase() === 'breakfast'),
+      Lunch:     mls.filter((m: any) => m.meal_type?.toLowerCase() === 'lunch'),
+      Dinner:    mls.filter((m: any) => m.meal_type?.toLowerCase() === 'dinner'),
+      Snacks:    mls.filter((m: any) => m.meal_type?.toLowerCase() === 'snack'),
+      Other:     mls.filter((m: any) => !['breakfast','lunch','dinner','snack'].includes(m.meal_type?.toLowerCase())),
     };
   }, [dailySummary]);
 
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-
-  async function handleParseImage() {
-    if (!selectedImage) return;
-
-    const parsedIngredients = await parsePantryImage(selectedImage);
-    if (!parsedIngredients || !Array.isArray(parsedIngredients)) return;
-
-    setIngredients((current) => [
-      ...current,
-      ...parsedIngredients.map((item: any) => ({
-        id: item.id || createIngredient().id,
-        name: item.name || '',
-        amount: item.amount ?? 0,
-        unit: item.unit || 'g',
-      }))
-    ]);
-    setSelectedImage(null);
-  }
-
   const getTodayString = () => new Date().toISOString().split('T')[0];
 
+  // Restore session
   useEffect(() => {
     const saved = localStorage.getItem('userProfile');
-    if (saved) {
-      setUserProfile(JSON.parse(saved));
-    }
+    if (saved) setUserProfile(JSON.parse(saved));
   }, []);
 
   useEffect(() => {
@@ -163,913 +232,733 @@ export default function Home() {
       setTargetCarbs(userProfile.target_carbs);
       setTargetFat(userProfile.target_fat);
       fetchDailySummary(userProfile.username, getTodayString()).then(setDailySummary);
+      // Fetch weekly data — start from Monday of this week
+      const now = new Date();
+      const dayOfWeek = now.getDay(); // 0=Sun
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + diffToMonday);
+      const weekStart = monday.toISOString().split('T')[0];
+      fetchWeeklySummary(userProfile.username, weekStart).then(d => {
+        if (d?.days) setWeeklyData(d.days);
+      });
     }
   }, [userProfile]);
 
-  async function handleUpdateProfile() {
+  // Re-fetch diary when user switches calendar day
+  useEffect(() => {
     if (!userProfile) return;
-    const profile = {
-      username: userProfile.username,
-      target_calories: targetCalories,
-      target_protein: targetProtein,
-      target_carbs: targetCarbs,
-      target_fat: targetFat,
-    };
-    await updateProfile(profile);
-    setUserProfile(profile);
+    const d = weekDays.find(d => d.getDate() === activeDay);
+    if (!d) return;
+    const dateStr = d.toISOString().split('T')[0];
+    fetchDailySummary(userProfile.username, dateStr).then(setDailySummary);
+  }, [activeDay]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────────
+  async function handleParseImage() {
+    if (!selectedImage) return;
+    const parsed = await parsePantryImage(selectedImage);
+    if (!parsed || !Array.isArray(parsed)) return;
+    setIngredients(cur => [...cur, ...parsed.map((i: any) => ({
+      id: i.id || createIngredient().id, name: i.name || '', amount: i.amount ?? 0, unit: i.unit || 'g',
+    }))]);
+    setSelectedImage(null);
   }
 
-  async function handleLogin() {
-    if (!usernameInput.trim() || !passwordInput.trim()) return;
-    const profile = await login(usernameInput.trim(), passwordInput.trim());
+  async function handleLogin(u: string, p: string) {
+    if (!u.trim() || !p.trim()) return;
+    const profile = await login(u.trim(), p.trim());
     if (profile) setUserProfile(profile);
   }
 
-  async function handleRegister() {
-    if (!usernameInput.trim() || !passwordInput.trim()) return;
-    const profile = await register(usernameInput.trim(), passwordInput.trim());
+  async function handleRegister(u: string, p: string) {
+    if (!u.trim() || !p.trim()) return;
+    const profile = await register(u.trim(), p.trim());
     if (profile) setUserProfile(profile);
   }
 
   function handleLogout() {
-    localStorage.removeItem('nutrition_agent_profile');
+    localStorage.removeItem('userProfile');
     setUserProfile(null);
   }
 
   async function handleLogMeal(recipeToLog: any) {
     if (!userProfile || !recipeToLog) return;
     setIsLogging(prev => ({ ...prev, [recipeToLog.name]: true }));
-    const result = await logDailyMeal(userProfile.username, getTodayString(), recipeToLog);
+    // Pass current Rewe shopping snapshot so cost is persisted with this meal log
+    const shoppingCost  = state?.scraper_results?.total_cost   ?? 0;
+    const shoppingItems = (state?.scraper_results?.items ?? []).map((i: any) => ({ name: i.name, store: i.store, price: i.price }));
+    const result = await logDailyMeal(userProfile.username, getTodayString(), recipeToLog, shoppingCost, shoppingItems);
     if (result) {
       setLoggedStatus(prev => ({ ...prev, [recipeToLog.name]: true }));
-      const newSummary = await fetchDailySummary(userProfile.username, getTodayString());
+      const d = weekDays.find(d => d.getDate() === activeDay);
+      const dateStr = d ? d.toISOString().split('T')[0] : getTodayString();
+      const newSummary = await fetchDailySummary(userProfile.username, dateStr);
       setDailySummary(newSummary);
     }
     setIsLogging(prev => ({ ...prev, [recipeToLog.name]: false }));
   }
 
   async function handleGenerate() {
-    const activeCalories = dailySummary ? dailySummary.remaining.calories : targetCalories;
-    const activeProtein = dailySummary ? dailySummary.remaining.protein : targetProtein;
-    const activeCarbs = dailySummary ? dailySummary.remaining.carbs : targetCarbs;
-    const activeFat = dailySummary ? dailySummary.remaining.fat : targetFat;
-
-    const payload = {
-      user_prompt: ingredients.map((item) => item.name).filter(Boolean).join(', '),
-      mode,
-      meal_type: mealType,
-      cuisine_preference: selectedCuisines,
-      target_calories: activeCalories,
-      target_protein: activeProtein,
-      target_carbs: activeCarbs,
-      target_fat: activeFat,
-      ingredients,
-    };
-
-    await generateRecipe(payload);
+    const ac = dailySummary ? dailySummary.remaining.calories : targetCalories;
+    const ap = dailySummary ? dailySummary.remaining.protein  : targetProtein;
+    const ach = dailySummary ? dailySummary.remaining.carbs   : targetCarbs;
+    const af = dailySummary ? dailySummary.remaining.fat      : targetFat;
+    await generateRecipe({
+      user_prompt: ingredients.map(i => i.name).filter(Boolean).join(', '),
+      mode, meal_type: mealType, cuisine_preference: selectedCuisines,
+      target_calories: ac, target_protein: ap, target_carbs: ach, target_fat: af, ingredients,
+    });
     setLoggedStatus({});
     setSavedStatus({});
+    setActiveTab('build');
   }
 
   async function handleSaveMeal(recipeToSave: any) {
     if (!recipeToSave || savedStatus[recipeToSave.name]) return;
     setIsSaving(prev => ({ ...prev, [recipeToSave.name]: true }));
     const result = await saveMeal(recipeToSave);
-    if (result) {
-      setSavedStatus(prev => ({ ...prev, [recipeToSave.name]: true }));
-    }
+    if (result) setSavedStatus(prev => ({ ...prev, [recipeToSave.name]: true }));
     setIsSaving(prev => ({ ...prev, [recipeToSave.name]: false }));
   }
 
-  if (!userProfile) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="w-full max-w-md rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-2xl backdrop-blur-xl">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl font-semibold text-white">
-              {isRegisterMode ? 'Create Account' : 'Welcome Back'}
-            </h1>
-            <p className="mt-2 text-slate-400">
-              {isRegisterMode
-                ? 'Create a new account to save your macros.'
-                : 'Enter your credentials to access your daily macro tracker.'}
-            </p>
-          </div>
-          <div className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Username</label>
-              <input
-                type="text"
-                value={usernameInput}
-                onChange={(e) => setUsernameInput(e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="e.g. tharun"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && (isRegisterMode ? handleRegister() : handleLogin())}
-                className="w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 py-3 text-white focus:border-indigo-500 focus:outline-none"
-                placeholder="••••••••"
-              />
-            </div>
-            {error && <p className="text-rose-400 text-sm text-center">{error}</p>}
-            <button
-              onClick={isRegisterMode ? handleRegister : handleLogin}
-              disabled={isLoading}
-              className="w-full flex items-center justify-center gap-2 rounded-2xl bg-indigo-500 hover:bg-indigo-600 transition px-5 py-3 font-semibold text-white disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : (isRegisterMode ? 'Sign Up' : 'Sign In')}
-            </button>
-            <div className="text-center mt-4">
-              <button
-                onClick={() => setIsRegisterMode(!isRegisterMode)}
-                className="text-sm text-slate-400 hover:text-white transition"
-              >
-                {isRegisterMode ? 'Already have an account? Sign In' : 'Need an account? Create one'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
+  async function handleUpdateProfile() {
+    if (!userProfile) return;
+    const profile = { username: userProfile.username, target_calories: targetCalories,
+      target_protein: targetProtein, target_carbs: targetCarbs, target_fat: targetFat };
+    await updateProfile(profile);
+    setUserProfile(profile);
   }
 
+  // ── Auth gate ────────────────────────────────────────────────────────────────
+  if (!userProfile) {
+    return <LoginPage onLogin={handleLogin} onRegister={handleRegister} error={error} isLoading={isLoading} />;
+  }
+
+  // ── Macro progress percentages ───────────────────────────────────────────────
+  const consumed = dailySummary?.consumed ?? { calories: 0, protein: 0, carbs: 0, fat: 0 };
+  const calPct  = Math.min((consumed.calories / (targetCalories || 1)) * 100, 100);
+  const protPct = Math.min((consumed.protein  / (targetProtein  || 1)) * 100, 100);
+  const carbPct = Math.min((consumed.carbs    / (targetCarbs    || 1)) * 100, 100);
+  const fatPct  = Math.min((consumed.fat      / (targetFat      || 1)) * 100, 100);
+
+  const monthLabel = `${MONTH_LABELS[today.getMonth()]} ${today.getFullYear()}`;
+
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen px-6 py-8 lg:px-12">
-      <div className="mx-auto grid max-w-[1400px] gap-6 xl:grid-cols-[280px_1.2fr_0.95fr]">
-        <div className="space-y-6">
-          <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-6 shadow-soft backdrop-blur-xl sticky top-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Your Logs</p>
-                <h2 className="text-xl font-semibold text-white mt-1">Daily Diary</h2>
-              </div>
-            </div>
-            
-            <div className="space-y-6">
-              {['Breakfast', 'Lunch', 'Dinner', 'Snacks', 'Other'].map((category) => {
-                const meals = categorizedMeals[category as keyof typeof categorizedMeals];
-                if (category === 'Other' && meals.length === 0) return null;
-                
-                return (
-                  <div key={category} className="space-y-3">
-                    <h3 className="text-sm font-medium text-slate-400 flex items-center justify-between">
-                      {category}
-                      <span className="text-xs text-slate-500 bg-slate-800/50 px-2 py-0.5 rounded-full">{meals.length}</span>
-                    </h3>
-                    {meals.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-white/10 bg-slate-950/30 p-4 text-center text-xs text-slate-500">
-                        No {category.toLowerCase()} logged
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {meals.map((meal: any, idx: number) => (
-                          <div key={idx} className="rounded-2xl border border-white/5 bg-slate-950/70 p-3 shadow-sm">
-                            <p className="text-sm font-semibold text-white truncate" title={meal.title || meal.name}>
-                              {meal.title || meal.name}
-                            </p>
-                            <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-                              <span className="text-emerald-400/90">{meal.macro_fit?.calories_achieved || 0} kcal</span>
-                              <span>•</span>
-                              <span className="text-indigo-400/90">{meal.macro_fit?.protein_achieved || 0}g P</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #eef7f1 0%, #c8e2d2 60%, #b3d6bf 100%)' }}>
+
+      {/* ── Header ── */}
+      <header className="glass-card mx-auto mt-4 flex max-w-7xl items-center justify-between px-6 py-3"
+        style={{ borderRadius: '20px', margin: '16px auto', maxWidth: '1380px' }}>
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl"
+            style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
+            <span className="text-lg">🥗</span>
+          </div>
+          <div>
+            <div className="text-base font-bold" style={{ color: 'var(--text-main)' }}>NutriPlan</div>
+            <div className="text-xs" style={{ color: 'var(--sage)' }}>Hi, {userProfile.username} 👋</div>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Nutrition Agent</p>
-                <div className="flex items-center justify-between mt-3">
-                  <h1 className="text-4xl font-semibold text-white">TSK Meal Dashboard</h1>
-                  <button
-                    onClick={handleLogout}
-                    className="rounded-2xl bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-300 hover:bg-rose-500/20 transition"
-                  >
-                    Sign Out
-                  </button>
-                </div>
-                <p className="mt-3 max-w-2xl text-slate-400">Generate premium meal plans, grocery receipts, and macro summaries with AI-powered nutrition guidance.</p>
-                <div className="mt-6 flex flex-col gap-4">
-                  <div className="rounded-3xl bg-slate-950/80 border border-white/10 px-5 py-4 text-slate-300 shadow-lg">
-                    <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</p>
-                    <p className="mt-1 font-semibold flex items-center gap-2 text-emerald-300">
-                      <span className="relative flex h-2.5 w-2.5">
-                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                        <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-                      </span>
-                      {isLoading ? 'Cooking AI plans…' : 'Ready to craft meals'}
-                    </p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      setIsSavedMealsOpen(true);
-                      const meals = await fetchSavedMeals();
-                      setSavedMeals(meals);
-                    }}
-                    className="rounded-3xl bg-indigo-500/20 px-5 py-3 text-sm font-semibold text-indigo-300 transition hover:bg-indigo-500/30 text-center"
-                  >
-                    View Saved Meals
-                  </button>
-                </div>
-              </div>
-            </div>
-          </section>
+        <nav className="hidden md:flex items-center gap-1">
+          {([['build','🍳','Build'], ['diary','📓','My Diary'], ['stats','📊','Progress']] as const).map(([tab, emoji, label]) => (
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className="pill-btn px-4 py-2 text-sm"
+              style={{
+                background: activeTab === tab ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'transparent',
+                color: activeTab === tab ? '#fff' : 'var(--text-sub)',
+                borderRadius: '12px',
+                border: 'none',
+              }}>
+              {emoji} {label}
+            </button>
+          ))}
+        </nav>
 
-          <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-            <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-slate-500">Meal setup</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Build your recipe</h2>
-                </div>
-                <Sparkles className="h-8 w-8 text-cyan-300" />
-              </div>
+        <div className="flex items-center gap-3">
+          <button onClick={async () => { setIsSavedMealsOpen(true); const m = await fetchSavedMeals(); setSavedMeals(m); }}
+            className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 16px' }}>
+            <BookMarked className="h-3.5 w-3.5" /> Saved
+          </button>
+          <button onClick={handleLogout} className="pill-btn text-sm"
+            style={{ background: 'rgba(239,68,68,0.1)', color: '#991b1b', border: 'none', padding: '8px 16px', borderRadius: '12px' }}>
+            <LogOut className="h-3.5 w-3.5" /> Sign Out
+          </button>
+        </div>
+      </header>
 
-              <div className="mt-8 grid gap-4">
-                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
-                  <label className="text-sm font-semibold text-slate-300">Planning scope</label>
-                  <div className="inline-flex overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 text-sm text-slate-300 shadow-inner">
-                    {[
-                      { label: 'Single Meal', value: 'single_meal' },
-                      { label: 'Full Day', value: 'full_day' },
-                    ].map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setMode(option.value as 'single_meal' | 'full_day')}
-                        className={`px-4 py-3 transition ${
-                          mode === option.value
-                            ? 'bg-cyan-400 text-slate-950'
-                            : 'bg-transparent text-slate-300 hover:bg-slate-800/80'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
-                  <label className="text-sm font-semibold text-slate-300">Ingredients</label>
-                  <div className="space-y-3">
-                    {ingredients.map((item, index) => (
-                      <div key={item.id} className="flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-slate-900/80 p-3">
-                        <input
-                          value={item.name}
-                          onChange={(event) => {
-                            const next = [...ingredients];
-                            next[index] = { ...next[index], name: event.target.value };
-                            setIngredients(next);
-                          }}
-                          className="flex-1 min-w-[110px] rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                          placeholder="e.g. Chicken thighs"
-                        />
-
-                        <input
-                          type="number"
-                          value={item.amount || ''}
-                          onChange={(event) => {
-                            const next = [...ingredients];
-                            next[index] = { ...next[index], amount: Number(event.target.value) };
-                            setIngredients(next);
-                          }}
-                          className="w-16 rounded-xl border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-white text-center focus:border-indigo-500 focus:outline-none"
-                          placeholder="200"
-                        />
-
-                        <select
-                          value={item.unit}
-                          onChange={(event) => {
-                            const next = [...ingredients];
-                            next[index] = { ...next[index], unit: event.target.value as 'g' | 'ml' | 'whole' };
-                            setIngredients(next);
-                          }}
-                          className="w-20 rounded-xl border border-slate-700 bg-slate-950/70 px-2 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
-                        >
-                          <option value="g">g</option>
-                          <option value="ml">ml</option>
-                          <option value="whole">whole</option>
-                        </select>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIngredients((current) => current.filter((_, i) => i !== index));
-                          }}
-                          className="shrink-0 rounded-xl bg-rose-500/20 px-2.5 py-2 text-xs font-medium text-rose-300 transition hover:bg-rose-500/30"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setIngredients((current) => [...current, createIngredient()])}
-                      className="inline-flex items-center justify-center rounded-3xl bg-slate-800/90 px-5 py-3 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-slate-700/80"
-                    >
-                      + Add Ingredient
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-semibold text-slate-300">Upload pantry photo</label>
-                    <span className="rounded-full bg-slate-800/80 px-3 py-1 text-xs text-slate-400">Gemini Vision</span>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto] items-end">
-                    <label className="flex cursor-pointer flex-col rounded-3xl border border-dashed border-white/10 bg-slate-900/80 p-4 text-sm text-slate-300 transition hover:border-slate-400">
-                      <span className="mb-2 flex items-center gap-2 text-slate-200">
-                        <UploadCloud className="h-4 w-4" /> Select image
-                      </span>
-                      <span className="text-xs text-slate-500">PNG, JPG, JPEG, WEBP</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0] ?? null;
-                          setSelectedImage(file);
-                        }}
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleParseImage}
-                      disabled={!selectedImage || isLoading}
-                      className="inline-flex items-center justify-center rounded-3xl bg-cyan-400/10 px-4 py-3 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-400/15 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      Parse image
-                    </button>
-                  </div>
-                  {selectedImage ? (
-                    <p className="text-xs text-slate-400">Selected file: {selectedImage.name}</p>
-                  ) : (
-                    <p className="text-xs text-slate-500">Upload a pantry image to auto-fill ingredients.</p>
+      {/* ── Weekly Calendar Strip ── */}
+      <div style={{ maxWidth: '1380px', margin: '0 auto', padding: '0 16px' }}>
+        <div className="glass-card mt-4 px-6 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-base font-semibold" style={{ color: 'var(--text-main)' }}>{monthLabel}</span>
+            <span className="section-label">{dailySummary ? `${dailySummary.meals?.length || 0} meals today` : 'No meals logged'}</span>
+          </div>
+          <div className="flex items-center gap-1 overflow-x-auto pb-1">
+            {weekDays.map((d, i) => {
+              const isToday = d.toDateString() === today.toDateString();
+              const isActive = d.getDate() === activeDay;
+              return (
+                <button key={i} onClick={() => setActiveDay(d.getDate())}
+                  className={`cal-day ${isActive ? 'active' : ''}`}
+                  style={!isActive ? { color: 'var(--text-sub)' } : {}}>
+                  <span className="day-label">{DAY_LABELS[d.getDay()]}</span>
+                  <span className="day-num">{d.getDate()}</span>
+                  {isToday && !isActive && (
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--green-400)', display: 'block', marginTop: 2 }} />
                   )}
-                </div>
-
-                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-4">
-                  <label className="text-sm font-semibold text-slate-300">Choose cuisine</label>
-                  <div className="flex flex-wrap gap-3 md:gap-4">
-                    {allCuisines.map((cuisine) => {
-                      const active = selectedCuisines.includes(cuisine.name);
-                      return (
-                        <button
-                          key={cuisine.name}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCuisines((current) =>
-                              current.includes(cuisine.name)
-                                ? current.filter((item) => item !== cuisine.name)
-                                : [...current, cuisine.name]
-                            );
-                          }}
-                          className={`inline-flex items-center gap-3 rounded-2xl border px-5 py-3 text-sm sm:text-base font-medium transition ${
-                            active
-                              ? 'border-cyan-400/30 bg-cyan-400/10 text-white shadow-[0_0_15px_rgba(34,211,238,0.1)]'
-                              : 'border-white/10 bg-slate-800/70 text-slate-200 hover:-translate-y-0.5 hover:bg-slate-700/80 hover:border-slate-500'
-                          }`}
-                        >
-                          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950/80 text-xl shadow-inner">
-                            {cuisine.emoji}
-                          </span>
-                          <span className="tracking-wide">{cuisine.name}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {mode === 'single_meal' ? (
-                  <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                    <label className="text-sm font-semibold text-slate-300">Meal type</label>
-                    <select
-                      value={mealType}
-                      onChange={(event) => setMealType(event.target.value)}
-                      className="w-full rounded-3xl border border-white/10 bg-slate-950/70 px-4 py-3 text-slate-100 focus:border-sky-400 focus:outline-none"
-                    >
-                      <option value="Breakfast">Breakfast</option>
-                      <option value="Lunch">Lunch</option>
-                      <option value="Dinner">Dinner</option>
-                      <option value="Snack">Snack</option>
-                    </select>
-                  </div>
-                ) : null}
-
-                <div className="grid gap-3 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-semibold text-slate-300">Your Daily Macro Targets</label>
-                    <button
-                      onClick={handleUpdateProfile}
-                      disabled={isLoading}
-                      className="text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition"
-                    >
-                      {isLoading ? 'Updating...' : 'Save Profile'}
-                    </button>
-                  </div>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-2 text-sm text-slate-300">
-                      Target Calories
-                      <input
-                        type="number"
-                        value={targetCalories}
-                        onChange={(event) => setTargetCalories(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300">
-                      Target Protein (g)
-                      <input
-                        type="number"
-                        value={targetProtein}
-                        onChange={(event) => setTargetProtein(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300">
-                      Target Carbs (g)
-                      <input
-                        type="number"
-                        value={targetCarbs}
-                        onChange={(event) => setTargetCarbs(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
-                      />
-                    </label>
-                    <label className="space-y-2 text-sm text-slate-300">
-                      Target Fat (g)
-                      <input
-                        type="number"
-                        value={targetFat}
-                        onChange={(event) => setTargetFat(Number(event.target.value))}
-                        className="w-full rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3 text-slate-100 focus:border-indigo-400 focus:outline-none transition"
-                      />
-                    </label>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleGenerate}
-                  disabled={isLoading}
-                  className="mt-1 inline-flex w-full items-center justify-center gap-3 rounded-3xl bg-gradient-to-r from-slate-800 to-slate-700 px-5 py-4 text-sm font-semibold text-white transition hover:-translate-y-0.5 hover:shadow-soft disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isLoading ? <Loader2 className="h-5 w-5 animate-spin text-sky-300" /> : <ArrowRight className="h-5 w-5 text-sky-300" />}
-                  {isLoading ? 'Generating recipe...' : 'Generate recipe'}
                 </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Main Grid ── */}
+      <main style={{ maxWidth: '1380px', margin: '16px auto 32px', padding: '0 16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '16px' }}>
+
+          {/* ══ LEFT PANEL ══ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* Macro overview rings */}
+            <div className="glass-card p-5">
+              <div className="section-label mb-4">Today's Progress</div>
+              <div className="flex items-center justify-around">
+                <MacroRing pct={calPct}  color="#4a8856" label="Calories" value={`${consumed.calories} kcal`} />
+                <MacroRing pct={protPct} color="#0ea5e9" label="Protein"  value={`${consumed.protein}g`} />
+                <MacroRing pct={carbPct} color="#f59e0b" label="Carbs"    value={`${consumed.carbs}g`} />
+                <MacroRing pct={fatPct}  color="#ef4444" label="Fat"      value={`${consumed.fat}g`} />
               </div>
-            </section>
-            
-            <div className="space-y-6">
+
               {dailySummary && (
-                <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Daily Tracker</p>
-                      <h2 className="mt-2 text-2xl font-semibold text-white">Remaining Macros</h2>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                    {[
-                      { label: 'Calories', val: dailySummary.remaining.calories, color: 'text-sky-300' },
-                      { label: 'Protein', val: `${dailySummary.remaining.protein}g`, color: 'text-indigo-300' },
-                      { label: 'Carbs', val: `${dailySummary.remaining.carbs}g`, color: 'text-amber-300' },
-                      { label: 'Fat', val: `${dailySummary.remaining.fat}g`, color: 'text-rose-300' }
-                    ].map(macro => (
-                      <div key={macro.label} className="flex flex-col items-center justify-center rounded-2xl bg-slate-950/70 p-4 border border-white/5">
-                        <span className={`text-xl font-bold ${macro.color}`}>{macro.val}</span>
-                        <span className="text-xs text-slate-400 mt-1 uppercase tracking-wider">{macro.label}</span>
+                <div className="mt-4 space-y-2">
+                  {[
+                    { label: 'Calories', remaining: dailySummary.remaining.calories, target: targetCalories, color: '#4a8856', unit: 'kcal' },
+                    { label: 'Protein',  remaining: dailySummary.remaining.protein,  target: targetProtein,  color: '#0ea5e9', unit: 'g' },
+                    { label: 'Carbs',    remaining: dailySummary.remaining.carbs,    target: targetCarbs,    color: '#f59e0b', unit: 'g' },
+                    { label: 'Fat',      remaining: dailySummary.remaining.fat,      target: targetFat,      color: '#ef4444', unit: 'g' },
+                  ].map(m => (
+                    <div key={m.label}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span style={{ color: 'var(--text-sub)' }}>{m.label}</span>
+                        <span style={{ color: m.remaining > 0 ? m.color : '#ef4444', fontWeight: 600 }}>
+                          {m.remaining > 0 ? `${m.remaining} ${m.unit} left` : 'Goal hit! 🎉'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Macro report</p>
-                    <h2 className="mt-2 text-2xl font-semibold text-white">Macro Match & Delta</h2>
-                  </div>
-                  <div className="inline-flex items-center gap-2 rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">
-                    <span>🟢</span>
-                    <span>{macroFit.match_score_percentage}% Match</span>
-                  </div>
+                      <div className="progress-track">
+                        <div className="progress-fill"
+                          style={{ width: `${Math.min(((m.target - Math.max(m.remaining,0)) / m.target) * 100, 100)}%`, background: `linear-gradient(90deg, ${m.color}88, ${m.color})` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
 
-                <div className="mt-8 grid gap-5">
-                  <div className="grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {[
-                        { label: 'Calories', target: macroFit.calories_target, actual: macroFit.calories_achieved, delta: macroFit.calories_delta },
-                        { label: 'Protein', target: macroFit.protein_target, actual: macroFit.protein_achieved, delta: macroFit.protein_delta },
-                        { label: 'Carbs', target: macroFit.carbs_target, actual: macroFit.carbs_achieved, delta: macroFit.carbs_delta },
-                        { label: 'Fat', target: macroFit.fat_target, actual: macroFit.fat_achieved, delta: macroFit.fat_delta },
-                      ].map((item) => {
-                        const unit = item.label !== 'Calories' ? 'g' : ' kcal';
-                        const isOverFat = item.label === 'Fat' && item.delta > 0;
-                        const deltaColor = isOverFat
-                          ? 'text-amber-400 font-medium'
-                          : item.delta > 0
-                          ? 'text-emerald-300'
-                          : item.delta < 0
-                          ? 'text-rose-300'
-                          : 'text-slate-400';
-                        const deltaText = item.delta > 0
-                          ? `+${item.delta}${unit}`
-                          : item.delta < 0
-                          ? `${item.delta}${unit}`
-                          : `Match`;
+            {/* Daily Diary */}
+            <div className="glass-card p-5" style={{ flex: 1 }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="section-label">Daily Diary</div>
+                <span className="badge badge-green">{dailySummary?.meals?.length || 0} logged</span>
+              </div>
 
-                        return (
-                          <div key={item.label} className="rounded-2xl bg-slate-900/80 p-4">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-slate-400">{item.label}</span>
-                              <span className={`text-xs ${deltaColor}`}>{deltaText}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {(['Breakfast','Lunch','Dinner','Snacks'] as const).map(cat => {
+                  const catMeals = categorizedMeals[cat];
+                  const catKey   = cat.toLowerCase().replace('snacks','snack');
+                  return (
+                    <div key={cat}>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span>{MEAL_EMOJIS[catKey] || '🥄'}</span>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--text-sub)' }}>{cat}</span>
+                        <span style={{ marginLeft:'auto', fontSize:10, color:'var(--sage)' }}>{MEAL_TIMES[catKey]}</span>
+                      </div>
+                      {catMeals.length === 0 ? (
+                        <div className="diary-entry text-xs" style={{ color: 'var(--sage)', textAlign:'center', borderStyle:'dashed', borderColor:'rgba(45,85,54,0.2)' }}>
+                          No {cat.toLowerCase()} logged
+                        </div>
+                      ) : catMeals.map((meal: any, idx: number) => (
+                        <div key={idx} className="diary-entry mb-1.5">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xl"
+                              style={{ background: 'rgba(45,85,54,0.10)' }}>
+                              {MEAL_FOOD_EMOJIS[catKey] || '🍴'}
                             </div>
-                            <div className="mt-2 flex items-baseline gap-2">
-                              <span className="text-xl font-bold text-slate-200">{item.actual}</span>
-                              <span className="text-xs text-slate-500">/ {item.target}{unit}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-main)' }}>
+                                {meal.title || meal.name}
+                              </p>
+                              <div className="mt-0.5 flex items-center gap-2">
+                                <span className="badge badge-green text-xs" style={{ padding:'1px 7px' }}>
+                                  <Flame className="h-2.5 w-2.5" /> {meal.macro_fit?.calories_achieved || 0} kcal
+                                </span>
+                                <span className="badge badge-sky text-xs" style={{ padding:'1px 7px' }}>
+                                  <Dumbbell className="h-2.5 w-2.5" /> {meal.macro_fit?.protein_achieved || 0}g P
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        );
-                      })}
+                        </div>
+                      ))}
                     </div>
+                  );
+                })}
+              </div>
+
+              {/* Rewe Daily Shopping Total */}
+              {dailySummary?.total_shopping_cost > 0 && (
+                <div className="mt-4 flex items-center justify-between rounded-2xl px-4 py-3"
+                  style={{ background: 'linear-gradient(135deg, rgba(45,85,54,0.10), rgba(90,168,110,0.08))', border: '1px solid rgba(45,85,54,0.18)' }}>
+                  <div>
+                    <div className="section-label" style={{ marginBottom: 2 }}>🛒 Today's Rewe Bill</div>
+                    <div className="text-xs" style={{ color: 'var(--sage)' }}>{dailySummary.shopping_items?.length || 0} items</div>
+                  </div>
+                  <div className="text-xl font-bold" style={{ color: 'var(--green-700)' }}>
+                    €{dailySummary.total_shopping_cost.toFixed(2)}
                   </div>
                 </div>
-              </section>
+              )}
             </div>
           </div>
 
-          <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</p>
-                <div className="flex items-center gap-4">
-                  <h2 className="mt-2 text-2xl font-semibold text-white">
-                    {mode === 'full_day'
-                      ? `Full Day Plan — ${meals?.length ? meals.length : 0} Meal${meals?.length !== 1 ? 's' : ''}`
-                      : 'Single Meal Plan'}
-                  </h2>
-                  {mode === 'single_meal' && recipe && (
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleSaveMeal(recipe)}
-                        disabled={isSaving[recipe.name]}
-                        className={`mt-2 flex items-center gap-2 rounded-2xl px-4 py-1.5 text-sm font-semibold transition ${
-                          savedStatus[recipe.name]
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
-                        }`}
-                      >
-                        {savedStatus[recipe.name] ? (
-                          <>
-                            <CheckCircle2 className="h-4 w-4" />
-                            Saved
-                          </>
-                        ) : isSaving[recipe.name] ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Saving
-                          </>
-                        ) : (
-                          'Save Meal'
+          {/* ══ RIGHT PANEL ══ */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+            {/* Weekly Compliance Bar Chart */}
+            {weeklyData.length > 0 && (
+              <div className="glass-card p-5 fade-up">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <div className="section-label mb-1">This Week</div>
+                    <h3 className="text-base font-bold" style={{ color: 'var(--text-main)' }}>Macro Compliance</h3>
+                  </div>
+                  <span className="badge badge-green">
+                    {Math.round(weeklyData.filter(d => d.compliance >= 60).length / 7 * 100)}% days on track
+                  </span>
+                </div>
+                <div className="flex items-end justify-between gap-2" style={{ height: 100 }}>
+                  {weeklyData.map((day: any, i: number) => {
+                    const pct = day.compliance;
+                    const color = pct >= 90 ? '#4a8856' : pct >= 60 ? '#f59e0b' : pct > 0 ? '#ef4444' : 'rgba(45,85,54,0.15)';
+                    const label = DAY_LABELS[new Date(day.date + 'T12:00:00').getDay()];
+                    const isToday = day.date === getTodayString();
+                    return (
+                      <div key={i} className="flex flex-col items-center gap-1 flex-1">
+                        {pct > 0 && (
+                          <span className="text-xs font-bold" style={{ color }}>{pct}%</span>
                         )}
-                      </button>
-                      
-                      <button
-                        onClick={() => handleLogMeal(recipe)}
-                        disabled={isLogging[recipe.name]}
-                        className={`mt-2 flex items-center gap-2 rounded-2xl px-4 py-1.5 text-sm font-semibold transition ${
-                          loggedStatus[recipe.name]
-                            ? 'bg-emerald-500/20 text-emerald-300'
-                            : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
-                        }`}
-                      >
-                        {loggedStatus[recipe.name] ? (
-                          <>
-                            <CheckCircle2 className="h-4 w-4" />
-                            Logged
-                          </>
-                        ) : isLogging[recipe.name] ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            Logging
-                          </>
-                        ) : (
-                          'Log to Today'
-                        )}
-                      </button>
-                      <button
-                        onClick={handleGenerate}
-                        disabled={isLoading}
-                        className="mt-2 flex items-center gap-2 rounded-2xl bg-rose-500/20 px-4 py-1.5 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/30 disabled:opacity-50"
-                      >
-                        <Sparkles className="h-4 w-4" />
-                        Regenerate
-                      </button>
-                    </div>
-                  )}
+                        <div className="w-full rounded-xl relative overflow-hidden" style={{ height: 64, background: 'rgba(45,85,54,0.08)' }}>
+                          <div className="absolute bottom-0 left-0 right-0 rounded-xl transition-all"
+                            style={{ height: `${Math.max(pct, 4)}%`, background: color, opacity: pct > 0 ? 1 : 0.3 }} />
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: isToday ? 'var(--green-600)' : 'var(--sage)', fontWeight: isToday ? 700 : 500 }}>{label}</span>
+                        {day.meal_count > 0 && <span className="text-xs" style={{ color: 'var(--sage)' }}>{day.meal_count}🍽</span>}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-              <div className="rounded-3xl bg-emerald-500/10 px-4 py-2 text-sm font-semibold text-emerald-300">High protein</div>
+            )}
+
+            {/* Build tab */}
+            <div className="glass-card p-6">
+              {/* Tabs (mobile) */}
+              <div className="flex md:hidden gap-2 mb-6">
+                {([['build','🍳','Build'], ['diary','📓','Diary'], ['stats','📊','Stats']] as const).map(([tab,e,l]) => (
+                  <button key={tab} onClick={() => setActiveTab(tab)}
+                    className="pill-btn flex-1 text-sm"
+                    style={{ padding:'8px', background: activeTab===tab ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'rgba(255,255,255,0.6)', color: activeTab===tab ? '#fff' : 'var(--text-sub)', border:'none', borderRadius:12 }}>
+                    {e} {l}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <div className="section-label mb-1">Meal Setup</div>
+                  <h2 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>Build Your Recipe</h2>
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ background: 'linear-gradient(135deg,#2d5536,#4a8856)' }}>
+                  <Sparkles className="h-5 w-5 text-white" />
+                </div>
+              </div>
+
+              {/* Mode toggle */}
+              <div className="mb-4">
+                <div className="section-label mb-2">Planning Scope</div>
+                <div className="flex gap-2">
+                  {[['single_meal','Single Meal'],['full_day','Full Day']].map(([v,l]) => (
+                    <button key={v} onClick={() => setMode(v as any)}
+                      className="pill-btn flex-1 text-sm"
+                      style={{ padding:'10px', background: mode===v ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'rgba(255,255,255,0.6)', color: mode===v ? '#fff' : 'var(--text-sub)', border: mode===v ? 'none' : '1.5px solid rgba(45,85,54,0.18)', borderRadius:14 }}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Cuisine chips */}
+              <div className="mb-4">
+                <div className="section-label mb-2">Cuisine</div>
+                <div className="flex flex-wrap gap-2">
+                  {allCuisines.map(c => (
+                    <button key={c.name}
+                      className={`cuisine-chip ${selectedCuisines.includes(c.name) ? 'active' : ''}`}
+                      onClick={() => setSelectedCuisines(cur => cur.includes(c.name) ? cur.filter(x => x !== c.name) : [...cur, c.name])}>
+                      <span>{c.emoji}</span> {c.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Meal type (single only) */}
+              {mode === 'single_meal' && (
+                <div className="mb-4">
+                  <div className="section-label mb-2">Meal Type</div>
+                  <div className="flex gap-2 flex-wrap">
+                    {['Breakfast','Lunch','Dinner','Snack'].map(t => (
+                      <button key={t} onClick={() => setMealType(t)}
+                        className="pill-btn text-sm"
+                        style={{ padding:'8px 16px', background: mealType===t ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'rgba(255,255,255,0.6)', color: mealType===t ? '#fff' : 'var(--text-sub)', border: mealType===t ? 'none' : '1.5px solid rgba(45,85,54,0.18)', borderRadius:12 }}>
+                        {MEAL_EMOJIS[t.toLowerCase()]} {t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ingredients */}
+              <div className="mb-4">
+                <div className="section-label mb-2">Ingredients</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {ingredients.map((item, idx) => (
+                    <div key={item.id} className="flex items-center gap-2">
+                      <input className="field flex-1" placeholder="e.g. Chicken breast" value={item.name}
+                        onChange={e => { const n=[...ingredients]; n[idx]={...n[idx], name:e.target.value}; setIngredients(n); }} />
+                      <input type="number" className="field" style={{ width:72, textAlign:'center' }} placeholder="200" value={item.amount||''}
+                        onChange={e => { const n=[...ingredients]; n[idx]={...n[idx], amount:Number(e.target.value)}; setIngredients(n); }} />
+                      <select className="field" style={{ width:80 }} value={item.unit}
+                        onChange={e => { const n=[...ingredients]; n[idx]={...n[idx], unit:e.target.value as any}; setIngredients(n); }}>
+                        <option value="g">g</option><option value="ml">ml</option><option value="whole">whole</option>
+                      </select>
+                      <button onClick={() => setIngredients(cur => cur.filter((_,i) => i!==idx))}
+                        style={{ background:'rgba(239,68,68,0.10)', border:'none', borderRadius:12, padding:'8px 10px', cursor:'pointer', color:'#991b1b' }}>
+                        <Minus className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <button onClick={() => setIngredients(cur => [...cur, createIngredient()])}
+                    className="pill-btn pill-btn-outline text-sm" style={{ alignSelf:'flex-start', padding:'8px 16px' }}>
+                    <Plus className="h-3.5 w-3.5" /> Add Ingredient
+                  </button>
+                </div>
+              </div>
+
+              {/* Pantry image */}
+              <div className="mb-4">
+                <div className="section-label mb-2">Scan Pantry Photo</div>
+                <div className="flex gap-3 items-end">
+                  <label className="flex-1 flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed py-4 cursor-pointer"
+                    style={{ borderColor:'rgba(45,85,54,0.25)', background:'rgba(255,255,255,0.5)' }}>
+                    <UploadCloud className="h-5 w-5" style={{ color:'var(--green-600)' }} />
+                    <span className="text-xs" style={{ color:'var(--sage)' }}>{selectedImage ? selectedImage.name : 'PNG, JPG, WEBP'}</span>
+                    <input type="file" accept="image/*" className="hidden"
+                      onChange={e => setSelectedImage(e.target.files?.[0] ?? null)} />
+                  </label>
+                  <button className="pill-btn pill-btn-outline text-sm" style={{ padding:'10px 16px' }}
+                    disabled={!selectedImage || isLoading} onClick={handleParseImage}>
+                    Parse
+                  </button>
+                </div>
+              </div>
+
+              {/* Macro targets */}
+              <div className="mb-5">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="section-label">Daily Macro Targets</div>
+                  <button onClick={handleUpdateProfile} disabled={isLoading}
+                    className="text-xs font-semibold" style={{ color:'var(--green-600)', background:'none', border:'none', cursor:'pointer' }}>
+                    {isLoading ? 'Saving…' : 'Save Profile'}
+                  </button>
+                </div>
+                <div className="grid gap-3" style={{ gridTemplateColumns:'1fr 1fr' }}>
+                  {[
+                    { label:'Calories', val:targetCalories, set:setTargetCalories, icon:<Flame className="h-3.5 w-3.5" /> },
+                    { label:'Protein g', val:targetProtein, set:setTargetProtein, icon:<Dumbbell className="h-3.5 w-3.5" /> },
+                    { label:'Carbs g',   val:targetCarbs,   set:setTargetCarbs,   icon:<Wheat className="h-3.5 w-3.5" /> },
+                    { label:'Fat g',     val:targetFat,     set:setTargetFat,     icon:<Droplets className="h-3.5 w-3.5" /> },
+                  ].map(m => (
+                    <label key={m.label} className="flex flex-col gap-1">
+                      <span className="flex items-center gap-1 text-xs font-medium" style={{ color:'var(--text-sub)' }}>
+                        {m.icon} {m.label}
+                      </span>
+                      <input type="number" className="field" value={m.val}
+                        onChange={e => m.set(Number(e.target.value))} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate button */}
+              <button className="pill-btn pill-btn-green w-full text-base" onClick={handleGenerate} disabled={isLoading}>
+                {isLoading ? <Loader2 className="h-5 w-5 spin" /> : <Sparkles className="h-5 w-5" />}
+                {isLoading ? 'Generating…' : 'Generate Recipe'}
+              </button>
+              {error && <p className="mt-3 text-sm text-red-500 text-center">{error}</p>}
             </div>
 
-            {mode === 'full_day' ? (
-              <div className="mt-8 space-y-6">
-                {meals.length ? (
-                  meals.map((meal: any) => (
-                    <div key={`${meal.meal_type}-${meal.name}`} className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">{meal.meal_type}</h3>
-                          <div className="flex items-center gap-4 mt-2">
-                            <p className="text-xl font-semibold text-white">{meal.title || meal.name}</p>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => handleSaveMeal(meal)}
-                                disabled={isSaving[meal.name]}
-                                className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
-                                  savedStatus[meal.name]
-                                    ? 'bg-emerald-500/20 text-emerald-300'
-                                    : 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
-                                }`}
-                              >
-                                {savedStatus[meal.name] ? (
-                                  <>
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Saved
-                                  </>
-                                ) : isSaving[meal.name] ? (
-                                  <>
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    Saving
-                                  </>
-                                ) : (
-                                  'Save Meal'
-                                )}
+            {/* ── Recipe / Meal Plan Result ── */}
+            {meals.length > 0 && (
+              <div className="glass-card p-6 fade-up">
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <div className="section-label mb-1">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</div>
+                    <h2 className="text-xl font-bold" style={{ color:'var(--text-main)' }}>
+                      {mode === 'full_day' ? `${meals.length} Meals Generated` : (recipe?.title || recipe?.name)}
+                    </h2>
+                  </div>
+                  <div className="flex gap-2">
+                    <span className="badge badge-green">
+                      <CheckCircle2 className="h-3 w-3" /> {macroFit.match_score_percentage}% Match
+                    </span>
+                  </div>
+                </div>
+
+                {mode === 'full_day' ? (
+                  <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+                    {meals.map((meal: any) => (
+                      <div key={`${meal.meal_type}-${meal.name}`} className="meal-card">
+                        <div className="flex gap-4 p-4">
+                          {/* Food emoji image */}
+                          <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-4xl"
+                            style={{ background: 'linear-gradient(135deg, rgba(45,85,54,0.12), rgba(90,168,110,0.18))' }}>
+                            {MEAL_FOOD_EMOJIS[meal.meal_type?.toLowerCase()] || '🍴'}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="badge badge-green mb-1" style={{ fontSize:10 }}>{meal.meal_type}</span>
+                                <p className="text-base font-bold truncate" style={{ color:'var(--text-main)' }}>{meal.title || meal.name}</p>
+                                <div className="flex items-center gap-2 mt-1.5">
+                                  <span className="flex items-center gap-1 text-xs" style={{ color:'var(--sage)' }}>
+                                    <Flame className="h-3 w-3 text-amber-500" /> {meal.macro_fit?.calories_achieved || 0} kcal
+                                  </span>
+                                  <span className="flex items-center gap-1 text-xs" style={{ color:'var(--sage)' }}>
+                                    <Dumbbell className="h-3 w-3 text-sky-500" /> {meal.macro_fit?.protein_achieved || 0}g protein
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button onClick={() => handleSaveMeal(meal)} disabled={isSaving[meal.name]}
+                                className="badge" style={{ background: savedStatus[meal.name] ? 'rgba(45,85,54,0.15)' : 'rgba(255,255,255,0.8)', color: savedStatus[meal.name] ? '#2d5536' : 'var(--text-sub)', border:'1px solid rgba(45,85,54,0.2)', cursor:'pointer', padding:'5px 12px' }}>
+                                {savedStatus[meal.name] ? <><CheckCircle2 className="h-3 w-3" /> Saved</> : isSaving[meal.name] ? <><Loader2 className="h-3 w-3 spin" /> Saving</> : 'Save'}
                               </button>
-                              
-                              <button
-                                onClick={() => handleLogMeal(meal)}
-                                disabled={isLogging[meal.name]}
-                                className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
-                                  loggedStatus[meal.name]
-                                    ? 'bg-emerald-500/20 text-emerald-300'
-                                    : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
-                                }`}
-                              >
-                                {loggedStatus[meal.name] ? (
-                                  <>
-                                    <CheckCircle2 className="h-3 w-3" />
-                                    Logged
-                                  </>
-                                ) : isLogging[meal.name] ? (
-                                  <>
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                    Logging
-                                  </>
-                                ) : (
-                                  'Log to Today'
-                                )}
+                              <button onClick={() => handleLogMeal(meal)} disabled={isLogging[meal.name]}
+                                className="badge" style={{ background: loggedStatus[meal.name] ? 'rgba(14,165,233,0.12)' : 'rgba(255,255,255,0.8)', color: loggedStatus[meal.name] ? '#0369a1' : 'var(--text-sub)', border:'1px solid rgba(14,165,233,0.2)', cursor:'pointer', padding:'5px 12px' }}>
+                                {loggedStatus[meal.name] ? <><CheckCircle2 className="h-3 w-3" /> Logged</> : isLogging[meal.name] ? <><Loader2 className="h-3 w-3 spin" /> Logging</> : 'Log to Today'}
                               </button>
-                              <button
-                                onClick={handleGenerate}
-                                disabled={isLoading}
-                                className="flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition disabled:opacity-50"
-                              >
-                                <Sparkles className="h-3 w-3" />
-                                Regenerate
+                              <button onClick={handleGenerate} disabled={isLoading}
+                                className="badge" style={{ background:'rgba(249,115,22,0.10)', color:'#9a3412', border:'1px solid rgba(249,115,22,0.2)', cursor:'pointer', padding:'5px 12px' }}>
+                                <RefreshCw className="h-3 w-3" /> Regenerate
                               </button>
                             </div>
                           </div>
                         </div>
-                        <div className="rounded-3xl bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
-                          {meal.macro_fit.calories_achieved} kcal • {meal.macro_fit.protein_achieved}g P
+                        {/* Ingredients + Instructions accordion */}
+                        <div style={{ borderTop:'1px solid rgba(45,85,54,0.10)', padding:'12px 16px' }}>
+                          <div className="grid gap-4" style={{ gridTemplateColumns:'1fr 1fr' }}>
+                            <div>
+                              <div className="section-label mb-2">Ingredients</div>
+                              <ul style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                                {(meal.ingredients ?? []).map((ing: any, i: number) => (
+                                  <li key={i} className="flex items-center justify-between text-xs"
+                                    style={{ padding:'6px 10px', background:'rgba(45,85,54,0.06)', borderRadius:10, color:'var(--text-sub)' }}>
+                                    <span>{ing.name}</span>
+                                    <span className="font-medium" style={{ color:'var(--text-main)' }}>{ing.amount}{ing.unit}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div>
+                              <div className="section-label mb-2">Steps</div>
+                              <ol style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                                {(meal.instructions ?? []).map((step: string, i: number) => (
+                                  <li key={i} className="flex gap-2 text-xs" style={{ color:'var(--text-sub)' }}>
+                                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                                      style={{ background:'linear-gradient(135deg,#2d5536,#4a8856)', color:'#fff' }}>{i+1}</span>
+                                    <span>{step}</span>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          </div>
                         </div>
                       </div>
-                      <div className="mt-6 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-                        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
-                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
-                          <ul className="mt-4 space-y-3 text-slate-200">
-                            {(meal.ingredients ?? []).map((ingredient: any, index: number) => (
-                              <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
-                                <div className="flex items-center justify-between gap-4">
-                                  <span>{ingredient.name}</span>
-                                  <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
-                                </div>
+                    ))}
+                  </div>
+                ) : recipe && (
+                  <div className="meal-card">
+                    <div className="flex gap-4 p-5">
+                      <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl text-5xl"
+                        style={{ background:'linear-gradient(135deg, rgba(45,85,54,0.12), rgba(90,168,110,0.18))' }}>
+                        {MEAL_FOOD_EMOJIS[recipe.meal_type?.toLowerCase()] || '🍴'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <span className="badge badge-green mb-2" style={{ fontSize:10 }}>{recipe.meal_type || mealType}</span>
+                        <p className="text-xl font-bold" style={{ color:'var(--text-main)' }}>{recipe.title || recipe.name}</p>
+                        <div className="flex items-center gap-3 mt-2">
+                          <span className="flex items-center gap-1 text-sm" style={{ color:'var(--sage)' }}>
+                            <Flame className="h-4 w-4 text-amber-500" /> {macroFit.calories_achieved} kcal
+                          </span>
+                          <span className="flex items-center gap-1 text-sm" style={{ color:'var(--sage)' }}>
+                            <Dumbbell className="h-4 w-4 text-sky-500" /> {macroFit.protein_achieved}g protein
+                          </span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button onClick={() => handleSaveMeal(recipe)} disabled={isSaving[recipe.name]}
+                            className="badge" style={{ background: savedStatus[recipe.name] ? 'rgba(45,85,54,0.15)' : 'rgba(255,255,255,0.8)', color: savedStatus[recipe.name] ? '#2d5536' : 'var(--text-sub)', border:'1px solid rgba(45,85,54,0.2)', cursor:'pointer', padding:'6px 14px', fontSize:13 }}>
+                            {savedStatus[recipe.name] ? <><CheckCircle2 className="h-3.5 w-3.5" /> Saved</> : isSaving[recipe.name] ? <><Loader2 className="h-3.5 w-3.5 spin" /> Saving</> : 'Save Meal'}
+                          </button>
+                          <button onClick={() => handleLogMeal(recipe)} disabled={isLogging[recipe.name]}
+                            className="badge" style={{ background: loggedStatus[recipe.name] ? 'rgba(14,165,233,0.12)' : 'rgba(255,255,255,0.8)', color: loggedStatus[recipe.name] ? '#0369a1' : 'var(--text-sub)', border:'1px solid rgba(14,165,233,0.2)', cursor:'pointer', padding:'6px 14px', fontSize:13 }}>
+                            {loggedStatus[recipe.name] ? <><CheckCircle2 className="h-3.5 w-3.5" /> Logged</> : isLogging[recipe.name] ? <><Loader2 className="h-3.5 w-3.5 spin" /> Logging</> : 'Log to Today'}
+                          </button>
+                          <button onClick={handleGenerate} disabled={isLoading}
+                            className="badge" style={{ background:'rgba(249,115,22,0.10)', color:'#9a3412', border:'1px solid rgba(249,115,22,0.2)', cursor:'pointer', padding:'6px 14px', fontSize:13 }}>
+                            <RefreshCw className="h-3.5 w-3.5" /> Regenerate
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ borderTop:'1px solid rgba(45,85,54,0.10)', padding:'16px 20px' }}>
+                      <div className="grid gap-6" style={{ gridTemplateColumns:'1fr 1fr' }}>
+                        <div>
+                          <div className="section-label mb-3">Ingredients</div>
+                          <ul style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                            {(recipe.ingredients ?? []).map((ing: any, i: number) => (
+                              <li key={i} className="flex items-center justify-between text-sm"
+                                style={{ padding:'8px 12px', background:'rgba(45,85,54,0.06)', borderRadius:12, color:'var(--text-sub)' }}>
+                                <span>{ing.name}</span>
+                                <span className="font-semibold" style={{ color:'var(--text-main)' }}>{ing.amount}{ing.unit}</span>
                               </li>
                             ))}
                           </ul>
                         </div>
-                        <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5">
-                          <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
-                          <ol className="mt-4 space-y-3 text-slate-200">
-                            {(meal.instructions ?? []).map((step: string, index: number) => (
-                              <li key={`${meal.meal_type}-${index}`} className="rounded-3xl border border-white/10 bg-slate-950/80 p-4">
-                                <span className="font-semibold text-slate-100">Step {index + 1}:</span> <span>{step}</span>
+                        <div>
+                          <div className="section-label mb-3">Instructions</div>
+                          <ol style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                            {recipeInstructions.map((step: string, i: number) => (
+                              <li key={i} className="flex gap-3 text-sm" style={{ color:'var(--text-sub)' }}>
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                                  style={{ background:'linear-gradient(135deg,#2d5536,#4a8856)', color:'#fff' }}>{i+1}</span>
+                                <span>{step}</span>
                               </li>
                             ))}
                           </ol>
                         </div>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 p-6 text-slate-500">
-                    Generate a full-day meal plan to see each meal breakdown.
                   </div>
                 )}
               </div>
-            ) : (
-              <div className="mt-8 grid gap-5 sm:grid-cols-[1.1fr_0.9fr]">
-                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                  <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Ingredients</h3>
-                  <ul className="mt-5 space-y-3 text-slate-200">
-                    {(recipe?.ingredients ?? []).map((ingredient: any, index: number) => (
-                      <li key={`${ingredient.name}-${index}`} className="rounded-3xl border border-white/10 bg-slate-900/80 px-4 py-3">
-                        <div className="flex items-center justify-between gap-4">
-                          <span>{ingredient.name}</span>
-                          <span className="text-sm text-slate-400">{ingredient.amount} {ingredient.unit}</span>
-                        </div>
-                      </li>
-                    ))}
-                    {!recipe?.ingredients?.length ? (
-                      <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-3 text-slate-500">
-                        Add ingredients and generate to see the recipe details.
-                      </li>
-                    ) : null}
-                  </ul>
-                </div>
+            )}
 
-                <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                  <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructions</h3>
-                  <ol className="mt-5 space-y-4 text-slate-200">
-                    {recipeInstructions.length ? (
-                      recipeInstructions.map((step: string, index: number) => (
-                        <li key={`${step}-${index}`} className="flex gap-4 rounded-3xl border border-white/10 bg-slate-900/80 p-4">
-                          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-slate-100">{index + 1}</span>
-                          <p>{step}</p>
-                        </li>
-                      ))
-                    ) : (
-                      <li className="rounded-3xl border border-dashed border-white/20 bg-slate-900/80 px-4 py-4 text-slate-500">
-                        Generate a recipe to see step-by-step instructions.
-                      </li>
-                    )}
-                  </ol>
+            {/* Grocery Receipt */}
+            {receipt.missing.length > 0 && (
+              <div className="glass-card p-6 fade-up">
+                <div className="section-label mb-1">Shopping List</div>
+                <h3 className="text-lg font-bold mb-4" style={{ color:'var(--text-main)' }}>
+                  {String(receipt.store ?? 'Rewe')} — Grocery Receipt
+                </h3>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {receipt.missing.map((item: any) => (
+                    <div key={item.name} className="flex items-center justify-between text-sm"
+                      style={{ padding:'10px 14px', background:'rgba(255,255,255,0.6)', borderRadius:14, color:'var(--text-sub)' }}>
+                      <span>{item.name}</span>
+                      <span className="font-bold" style={{ color:'var(--text-main)' }}>€{item.price.toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between"
+                    style={{ padding:'12px 14px', background:'linear-gradient(135deg,#2d5536,#4a8856)', borderRadius:14, color:'#fff', fontWeight:700 }}>
+                    <span>Total Estimate</span>
+                    <span className="text-lg">€{receipt.total.toFixed(2)}</span>
+                  </div>
                 </div>
               </div>
             )}
-          </section>
-        </div>
 
-        <div className="space-y-6">
-          <section className="rounded-[2rem] border border-white/10 bg-slate-900/80 p-8 shadow-soft backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Grocery receipt</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">
-                  {receipt.store.includes(' & ') ? 'Multi-store shopping list' : `${receipt.store} shopping list`}
-                </h2>
-              </div>
-              <div className="rounded-3xl bg-blue-500/10 px-4 py-2 text-sm font-semibold text-sky-300">
-                Best results from {receipt.cheapest}
-              </div>
-            </div>
-
-            <div className="mt-8 space-y-4 rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-              <div className="flex items-center justify-between text-sm text-slate-400">
-                <span>Stores</span>
-                <span>{receipt.store}</span>
-              </div>
-              <div className="rounded-3xl bg-slate-900/80 p-4 text-slate-200">
-                {receipt.missing.map((item: any) => {
-                  const showStoreBadge = receipt.store.includes(' & ');
-                  return (
-                    <div key={item.name} className="flex items-center justify-between gap-4 border-b border-white/5 py-3 last:border-b-0">
-                      <div>
-                        <p className="text-sm text-slate-300">{item.name}</p>
-                        {showStoreBadge ? (
-                          <p className="text-xs text-slate-500">Best price at {item.store}</p>
-                        ) : null}
-                      </div>
-                      <p className="font-semibold text-white">€{item.price.toFixed(2)}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="flex items-center justify-between rounded-3xl border border-white/10 bg-slate-900/80 px-5 py-4 text-sm text-slate-200">
-                <span>Total estimate</span>
-                <span className="text-xl font-semibold text-white">€{receipt.total.toFixed(2)}</span>
-              </div>
-            </div>
-          </section>
-
-          {isLoading ? (
-            <section className="rounded-[2rem] border border-white/10 bg-gradient-to-br from-slate-950/80 to-slate-900/70 p-8 shadow-soft backdrop-blur-xl">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Live AI view</p>
-                  <h2 className="mt-2 text-2xl font-semibold text-white">Generation status</h2>
+            {/* Loading state */}
+            {isLoading && (
+              <div className="glass-card p-6 fade-up">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
+                    style={{ background:'linear-gradient(135deg,#2d5536,#4a8856)' }}>
+                    <Loader2 className="h-6 w-6 text-white spin" />
+                  </div>
+                  <div>
+                    <p className="font-semibold" style={{ color:'var(--text-main)' }}>AI is cooking your plan…</p>
+                    <p className="text-sm" style={{ color:'var(--sage)' }}>Optimising macros & ingredients</p>
+                  </div>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-3xl bg-slate-800/60 px-4 py-3 text-sm text-slate-200">
-                  <Loader2 className="h-4 w-4 animate-spin text-cyan-300" />
-                  <span>AI is calculating precise macros…</span>
-                </div>
+                <div className="shimmer mt-4 h-3 rounded-full" />
+                <div className="shimmer mt-2 h-3 rounded-full" style={{ width:'70%' }} />
               </div>
-
-              <div className="mt-7 grid gap-4 rounded-3xl border border-white/10 bg-slate-950/70 p-5 text-slate-300">
-                <p>Optimizing your meal around available pantry inventory, macro balance, and shopping cost.</p>
-                <p className="text-sm text-slate-400">Next update in 3 seconds.</p>
-              </div>
-            </section>
-          ) : null}
-          {error ? (
-            <div className="rounded-3xl border border-rose-400/20 bg-rose-500/10 p-5 text-sm text-rose-200">
-              <strong>Error:</strong> {error}
-            </div>
-          ) : null}
+            )}
+          </div>
         </div>
-      </div>
+      </main>
+
+      {/* ── Saved Meals Modal ── */}
       {isSavedMealsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-6 backdrop-blur-sm">
-          <div className="relative w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-[2rem] border border-white/10 bg-slate-900 shadow-2xl p-8">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background:'rgba(26,46,31,0.60)', backdropFilter:'blur(12px)' }}>
+          <div className="glass-card fade-up w-full max-w-2xl max-h-[85vh] overflow-y-auto p-8">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h2 className="text-2xl font-semibold text-white">Your Saved Meals</h2>
-                <p className="mt-1 text-sm text-slate-400">Recipes you've logged and saved for later.</p>
+                <h2 className="text-xl font-bold" style={{ color:'var(--text-main)' }}>Saved Meals</h2>
+                <p className="text-sm" style={{ color:'var(--sage)' }}>Recipes you've saved for later</p>
               </div>
-              <button
-                onClick={() => setIsSavedMealsOpen(false)}
-                className="rounded-full p-2 text-slate-400 hover:bg-white/10 hover:text-white transition"
-              >
-                <X className="h-6 w-6" />
+              <button onClick={() => setIsSavedMealsOpen(false)}
+                style={{ background:'rgba(239,68,68,0.10)', border:'none', borderRadius:999, padding:'8px', cursor:'pointer', color:'#991b1b' }}>
+                <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             {savedMeals.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-white/20 bg-slate-950/50 p-12 text-center text-slate-500">
-                You haven't saved any meals yet. Generate a recipe and click "Save Meal" to see it here!
+              <div className="text-center py-12" style={{ color:'var(--sage)' }}>
+                <UtensilsCrossed className="h-12 w-12 mx-auto mb-4 opacity-40" />
+                <p>No saved meals yet. Generate a recipe and save it!</p>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                 {savedMeals.map((meal: any, idx: number) => (
-                  <div key={idx} className="rounded-3xl border border-white/10 bg-slate-950/70 p-6">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <h3 className="text-sm uppercase tracking-[0.3em] text-slate-400">{meal.meal_type || 'Custom'}</h3>
-                        <p className="mt-1 text-xl font-semibold text-white">{meal.title || meal.name}</p>
-                        <div className="mt-3 flex gap-2">
-                          <button
-                            onClick={() => handleLogMeal(meal)}
-                            disabled={isLogging[meal.name]}
-                            className={`flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold transition ${
-                              loggedStatus[meal.name]
-                                ? 'bg-emerald-500/20 text-emerald-300'
-                                : 'bg-sky-500/20 text-sky-300 hover:bg-sky-500/30'
-                            }`}
-                          >
-                            {loggedStatus[meal.name] ? (
-                              <>
-                                <CheckCircle2 className="h-3 w-3" />
-                                Logged
-                              </>
-                            ) : isLogging[meal.name] ? (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Logging
-                              </>
-                            ) : (
-                              'Log to Today'
-                              )}
-                            </button>
-                            <button
-                              onClick={handleGenerate}
-                              disabled={isLoading}
-                              className="flex items-center gap-2 rounded-2xl px-3 py-1 text-xs font-semibold bg-rose-500/20 text-rose-300 hover:bg-rose-500/30 transition disabled:opacity-50"
-                            >
-                              <Sparkles className="h-3 w-3" />
-                              Regenerate
-                            </button>
-                          </div>
+                  <div key={idx} className="meal-card">
+                    <div className="flex gap-4 p-4 items-center">
+                      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-3xl"
+                        style={{ background:'linear-gradient(135deg,rgba(45,85,54,0.12),rgba(90,168,110,0.18))' }}>
+                        {MEAL_FOOD_EMOJIS[meal.meal_type?.toLowerCase()] || '🍴'}
                       </div>
-                      <div className="rounded-3xl bg-slate-900/80 px-4 py-2 text-sm text-slate-300">
-                        {meal.macro_fit?.calories_achieved || 0} kcal • {meal.macro_fit?.protein_achieved || 0}g P
+                      <div className="flex-1 min-w-0">
+                        <span className="badge badge-green" style={{ fontSize:10 }}>{meal.meal_type || 'Custom'}</span>
+                        <p className="text-base font-bold mt-1" style={{ color:'var(--text-main)' }}>{meal.title || meal.name}</p>
+                        <p className="text-xs mt-0.5" style={{ color:'var(--sage)' }}>
+                          {meal.macro_fit?.calories_achieved || 0} kcal • {meal.macro_fit?.protein_achieved || 0}g protein
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button onClick={() => handleLogMeal(meal)} disabled={isLogging[meal.name]}
+                          className="badge" style={{ background: loggedStatus[meal.name] ? 'rgba(14,165,233,0.12)' : 'rgba(255,255,255,0.8)', color: loggedStatus[meal.name] ? '#0369a1' : 'var(--text-sub)', border:'1px solid rgba(14,165,233,0.2)', cursor:'pointer', padding:'6px 12px', justifyContent:'center' }}>
+                          {loggedStatus[meal.name] ? <><CheckCircle2 className="h-3 w-3" /> Logged</> : isLogging[meal.name] ? <><Loader2 className="h-3 w-3 spin" /> Logging</> : 'Log Today'}
+                        </button>
+                        <button onClick={handleGenerate} disabled={isLoading}
+                          className="badge" style={{ background:'rgba(249,115,22,0.10)', color:'#9a3412', border:'1px solid rgba(249,115,22,0.2)', cursor:'pointer', padding:'6px 12px', justifyContent:'center' }}>
+                          <RefreshCw className="h-3 w-3" /> Regen
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -1079,6 +968,9 @@ export default function Home() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }
+
+// Helper
+const MONTH_LABELS = ['January','February','March','April','May','June','July','August','September','October','November','December'];

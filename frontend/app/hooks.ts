@@ -170,13 +170,13 @@ export function useNutritionAgent() {
     }
   }
 
-  async function logDailyMeal(username: string, date: string, recipe: any) {
+  async function logDailyMeal(username: string, date: string, recipe: any, shoppingCost = 0, shoppingItems: any[] = []) {
     setIsLoading(true);
     try {
       const response = await fetch('http://127.0.0.1:8001/log_daily_meal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, date, recipe }),
+        body: JSON.stringify({ username, date, recipe, shopping_cost: shoppingCost, shopping_items: shoppingItems }),
       });
       if (!response.ok) throw new Error('Failed to log meal');
       return await response.json();
@@ -185,6 +185,19 @@ export function useNutritionAgent() {
       return null;
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function fetchWeeklySummary(username: string, weekStart: string) {
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8001/weekly_summary?username=${encodeURIComponent(username)}&week_start=${encodeURIComponent(weekStart)}`
+      );
+      if (!response.ok) throw new Error('Failed to fetch weekly summary');
+      return await response.json();
+    } catch (err) {
+      console.error(err);
+      return null;
     }
   }
 
@@ -202,5 +215,5 @@ export function useNutritionAgent() {
     }
   }
 
-  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary };
+  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary };
 }

@@ -40,6 +40,9 @@ class Recipe(BaseModel):
     missing_ingredients: list[str] = Field(default_factory=list)
     instructions: list[str] = Field(default_factory=list)
     macro_fit: MacroFit = Field(default_factory=MacroFit)
+    # Shopping / Rewe cost snapshot saved at log time
+    shopping_cost: float = 0.0
+    shopping_items: list[dict] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def set_name(self) -> "Recipe":
@@ -140,3 +143,5 @@ class LogMealRequest(BaseModel):
     username: str
     date: str
     recipe: Recipe
+    shopping_cost: float = 0.0
+    shopping_items: list[dict] = []

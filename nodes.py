@@ -308,29 +308,55 @@ def build_full_day_plan(state: AppState, recipes: list[Recipe]) -> tuple[list[Re
 
 
 
-async def generate_recipe_llm(ingredients: list[IngredientInput], cuisine: str, meal_type: str) -> dict:
+async def generate_recipe_llm(
+    ingredients: list[IngredientInput],
+    cuisine: str,
+    meal_type: str,
+    target_calories: int = 0,
+    target_protein: int = 0,
+    target_carbs: int = 0,
+    target_fat: int = 0,
+) -> dict:
     if not ingredients:
         return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Prep ingredients", "Cook", "Serve"]}
     
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
     ingredient_list = ", ".join(f"{i.amount}{i.unit} {i.name}" for i in ingredients)
-    
-    prompt = f"""You are a Michelin-star chef specializing in {cuisine}.
-You must strictly adhere to the flavor profiles and cooking techniques of {cuisine}. Do not hallucinate fusion dishes unless explicitly asked.
 
-RULE 2: THE "NO-SLOP" MANDATE (SEPARATION OF CONCERNS): NEVER mix incompatible ingredients into a single bowl or pot just because the user provided them. If the user provides Chicken, Pasta, and Black Beans, structure the recipe properly: "Pan-Seared Chicken" (Main) with "Garlic Pasta" (Side 1) and "Spiced Beans" (Side 2). Cook them separately.
-RULE 3: ZERO HALLUCINATION & INGREDIENT FILTERING: You must use the user's input ingredients as the foundation. However, if an input ingredient completely violates the {cuisine} profile, you must either serve it as a disconnected side dish OR explicitly state in the description how you creatively adapted it. Do NOT invent new primary proteins or carb bases that the user did not provide.
-RULE 4: REALISTIC BRIDGING: If you must add ingredients to hit the target macros, they MUST seamlessly fit the {cuisine}. (e.g., Do not add soy sauce to an Italian dish to hit sodium/flavor targets; use parmesan or capers).
-RULE 5: AUTHENTIC SPICING & NAMING: Explicitly define the exact spices, herbs, or masalas characteristic of {cuisine}. Do not just say "spices"; say "Garam Masala, Turmeric, and Cumin" for Indian, or "Oregano and Basil" for Italian. Ensure the "title" is a highly authentic and descriptive name for the dish (e.g. "Paneer Tikka Masala" instead of "Indian Cheese Bowl").
+    macro_block = ""
+    if target_calories or target_protein:
+        macro_block = f"""
+TARGET MACROS — you MUST hit these numbers with your portion choices:
+  • Calories : {target_calories} kcal
+  • Protein  : {target_protein} g
+  • Carbs    : {target_carbs} g
+  • Fat      : {target_fat} g
 
+CRITICAL MACRO RULES:
+- Adjust gram weights of ingredients so the TOTAL meal hits the target macros.
+- Always state exact gram amounts (e.g. "180g chicken breast", "90g brown rice cooked").
+- If the base ingredients cannot reach the protein target alone, add a complementary
+  protein source that fits the {cuisine} cuisine (e.g. Greek yoghurt for Mediterranean,
+  paneer for Indian, tofu for Asian).
+- Do NOT exceed the calorie target by more than 10%.
+"""
+
+    prompt = f"""You are a Michelin-star chef AND a certified sports nutritionist specialising in {cuisine}.
+
+RULE 1: CUISINE FIDELITY. Strictly follow the flavour profiles and cooking techniques of {cuisine}.
+RULE 2: NO-SLOP. Never mix incompatible ingredients into one pot. If the user provides Chicken, Pasta, and Black Beans, cook them separately and plate properly.
+RULE 3: ZERO HALLUCINATION. Use the user's ingredients as the foundation. If an ingredient violates {cuisine}, serve it as a disconnected side or adapt it transparently.
+RULE 4: REALISTIC BRIDGING. Any added ingredients must fit {cuisine} authentically (e.g., no soy sauce in Italian; use capers or parmesan).
+RULE 5: AUTHENTIC SPICING. Name exact spices characteristic of {cuisine} (e.g., "Garam Masala, Turmeric, Cumin" for Indian; "Oregano, Basil" for Italian).
+{macro_block}
 Meal Type: {meal_type}
 Provided Ingredients: {ingredient_list}
 
 Return ONLY a valid JSON object with:
-- "title": A creative title for the meal.
-- "meal_structure": A short string describing plating structure (e.g., "Main + 2 Sides", "Single Bowl").
-- "instructions": An array of strings with step-by-step instructions.
-- "additional_ingredients": An array of strings containing any other ingredients you used in the instructions (e.g. olive oil, salt, spices) that were not in the provided ingredients list."""
+- "title": A creative, highly authentic dish name.
+- "meal_structure": A short plating description (e.g. "Main + 2 Sides").
+- "instructions": An array of step-by-step instruction strings. Each step must include exact gram weights.
+- "additional_ingredients": An array of any extra ingredients used (spices, oils, etc.) not in the provided list."""
 
     try:
         response = client.chat.completions.create(
@@ -344,6 +370,7 @@ Return ONLY a valid JSON object with:
         traceback.print_exc()
         print(f"Groq generation failed: {e}")
         return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Cook ingredients.", "Serve."]}
+
 
 
 def create_realistic_instructions(ingredients: list[IngredientInput], meal_type: str) -> list[str]:
@@ -486,7 +513,15 @@ async def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]
             present_names.add(name)
 
     
-    recipe_dict = await generate_recipe_llm(recipe.ingredients, state.cuisine_preference[0] if state.cuisine_preference else "Custom", recipe.meal_type or "Lunch")
+    recipe_dict = await generate_recipe_llm(
+        recipe.ingredients,
+        state.cuisine_preference[0] if state.cuisine_preference else "Custom",
+        recipe.meal_type or "Lunch",
+        target_calories=state.target_calories,
+        target_protein=state.target_protein,
+        target_carbs=state.target_carbs,
+        target_fat=state.target_fat,
+    )
     recipe.title = recipe_dict.get("title", recipe.title)
     recipe.meal_structure = recipe_dict.get("meal_structure")
     recipe.instructions = recipe_dict.get("instructions", [])
@@ -510,7 +545,14 @@ async def split_full_day_plan(state: AppState, base_recipe: Recipe, missing: lis
         IngredientInput(name="spinach", amount=40, unit="g"),
         IngredientInput(name="olive oil", amount=10, unit="g"),
     ]
-    b_dict = await generate_recipe_llm(b_ing, base_recipe.cuisine or "Custom", "Breakfast")
+    # For full-day plans split daily targets roughly: B=25%, L=35%, D=30%, S=10%
+    b_dict = await generate_recipe_llm(
+        b_ing, base_recipe.cuisine or "Custom", "Breakfast",
+        target_calories=int(state.target_calories * 0.25),
+        target_protein=int(state.target_protein * 0.25),
+        target_carbs=int(state.target_carbs * 0.25),
+        target_fat=int(state.target_fat * 0.25),
+    )
     breakfast = Recipe(
         title=b_dict.get("title", "Hearty Protein Breakfast"),
         meal_structure=b_dict.get("meal_structure"),
@@ -525,7 +567,13 @@ async def split_full_day_plan(state: AppState, base_recipe: Recipe, missing: lis
     for ing_name in additional:
         b_ing.append(IngredientInput(name=ing_name, amount=1, unit="g"))
 
-    l_dict = await generate_recipe_llm(base_recipe.ingredients, base_recipe.cuisine or "Custom", "Lunch")
+    l_dict = await generate_recipe_llm(
+        base_recipe.ingredients, base_recipe.cuisine or "Custom", "Lunch",
+        target_calories=int(state.target_calories * 0.35),
+        target_protein=int(state.target_protein * 0.35),
+        target_carbs=int(state.target_carbs * 0.35),
+        target_fat=int(state.target_fat * 0.35),
+    )
     lunch = Recipe(
         title=l_dict.get("title", "Macro Bridge Lunch Bowl"),
         meal_structure=l_dict.get("meal_structure"),
@@ -546,7 +594,13 @@ async def split_full_day_plan(state: AppState, base_recipe: Recipe, missing: lis
         IngredientInput(name="broccoli", amount=120, unit="g"),
         IngredientInput(name="olive oil", amount=15, unit="g"),
     ]
-    d_dict = await generate_recipe_llm(d_ing, base_recipe.cuisine or "Custom", "Dinner")
+    d_dict = await generate_recipe_llm(
+        d_ing, base_recipe.cuisine or "Custom", "Dinner",
+        target_calories=int(state.target_calories * 0.30),
+        target_protein=int(state.target_protein * 0.30),
+        target_carbs=int(state.target_carbs * 0.30),
+        target_fat=int(state.target_fat * 0.30),
+    )
     dinner = Recipe(
         title=d_dict.get("title", "Balanced Dinner Plate"),
         meal_structure=d_dict.get("meal_structure"),
@@ -566,7 +620,13 @@ async def split_full_day_plan(state: AppState, base_recipe: Recipe, missing: lis
         IngredientInput(name="avocado", amount=80, unit="g"),
         IngredientInput(name="salsa", amount=80, unit="g"),
     ]
-    s_dict = await generate_recipe_llm(s_ing, base_recipe.cuisine or "Custom", "Snack")
+    s_dict = await generate_recipe_llm(
+        s_ing, base_recipe.cuisine or "Custom", "Snack",
+        target_calories=int(state.target_calories * 0.10),
+        target_protein=int(state.target_protein * 0.10),
+        target_carbs=int(state.target_carbs * 0.10),
+        target_fat=int(state.target_fat * 0.10),
+    )
     snack = Recipe(
         title=s_dict.get("title", "Protein Snack Bowl"),
         meal_structure=s_dict.get("meal_structure"),
