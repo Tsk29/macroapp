@@ -508,7 +508,7 @@ export default function Home() {
                 })}
               </div>
 
-              {/* Rewe Daily Shopping Total */}
+              {/* Rewe Daily Shopping Total chip — only after meals logged with cost */}
               {dailySummary?.total_shopping_cost > 0 && (
                 <div className="mt-4 flex items-center justify-between rounded-2xl px-4 py-3"
                   style={{ background: 'linear-gradient(135deg, rgba(45,85,54,0.10), rgba(90,168,110,0.08))', border: '1px solid rgba(45,85,54,0.18)' }}>
@@ -522,6 +522,66 @@ export default function Home() {
                 </div>
               )}
             </div>
+
+            {/* ── Rewe Shopping List (live, from current generated recipe) ── */}
+            {(receipt.missing.length > 0 || (recipe?.missing_ingredients?.length ?? 0) > 0) && (
+              <div className="glass-card p-5 fade-up">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <div className="section-label mb-0.5">🛒 Rewe Shopping List</div>
+                    <h3 className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>
+                      Ingredients to buy
+                    </h3>
+                  </div>
+                  {receipt.total > 0 && (
+                    <div className="text-right">
+                      <div className="text-xs" style={{ color: 'var(--sage)' }}>Total estimate</div>
+                      <div className="text-lg font-bold" style={{ color: 'var(--green-700)' }}>€{receipt.total.toFixed(2)}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {/* If we have Rewe price data, show with prices */}
+                  {receipt.missing.length > 0 ? (
+                    receipt.missing.map((item: any, idx: number) => (
+                      <div key={idx} className="flex items-center justify-between text-sm"
+                        style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: 12, color: 'var(--text-sub)' }}>
+                        <div className="flex items-center gap-2">
+                          <span style={{ color: 'var(--sage)', fontSize: 16 }}>🛒</span>
+                          <span style={{ fontWeight: 500, color: 'var(--text-main)' }}>{item.name}</span>
+                          {item.store && (
+                            <span className="badge badge-green" style={{ padding: '1px 6px', fontSize: 9 }}>{item.store}</span>
+                          )}
+                        </div>
+                        <span className="font-bold" style={{ color: 'var(--green-700)' }}>
+                          €{(item.price ?? 0).toFixed(2)}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    /* Fallback: show missing ingredient names without prices */
+                    (recipe?.missing_ingredients ?? []).map((name: string, idx: number) => (
+                      <div key={idx} className="flex items-center gap-2 text-sm"
+                        style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.7)', borderRadius: 12 }}>
+                        <span style={{ color: 'var(--sage)', fontSize: 14 }}>🛒</span>
+                        <span style={{ color: 'var(--text-main)', fontWeight: 500 }}>{name}</span>
+                        <span className="badge badge-sky" style={{ marginLeft: 'auto', padding: '1px 8px', fontSize: 9 }}>to buy</span>
+                      </div>
+                    ))
+                  )}
+
+                  {receipt.total > 0 && (
+                    <div className="flex items-center justify-between mt-1"
+                      style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#2d5536,#4a8856)', borderRadius: 14, color: '#fff', fontWeight: 700 }}>
+                      <span>Total from {String(receipt.store ?? 'Rewe')}</span>
+                      <span>€{receipt.total.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* ══ RIGHT PANEL ══ */}
@@ -868,29 +928,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* Grocery Receipt */}
-            {receipt.missing.length > 0 && (
-              <div className="glass-card p-6 fade-up">
-                <div className="section-label mb-1">Shopping List</div>
-                <h3 className="text-lg font-bold mb-4" style={{ color:'var(--text-main)' }}>
-                  {String(receipt.store ?? 'Rewe')} — Grocery Receipt
-                </h3>
-                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                  {receipt.missing.map((item: any) => (
-                    <div key={item.name} className="flex items-center justify-between text-sm"
-                      style={{ padding:'10px 14px', background:'rgba(255,255,255,0.6)', borderRadius:14, color:'var(--text-sub)' }}>
-                      <span>{item.name}</span>
-                      <span className="font-bold" style={{ color:'var(--text-main)' }}>€{item.price.toFixed(2)}</span>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between"
-                    style={{ padding:'12px 14px', background:'linear-gradient(135deg,#2d5536,#4a8856)', borderRadius:14, color:'#fff', fontWeight:700 }}>
-                    <span>Total Estimate</span>
-                    <span className="text-lg">€{receipt.total.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
+            {/* Grocery Receipt card moved to left sidebar */}
 
             {/* Loading state */}
             {isLoading && (
