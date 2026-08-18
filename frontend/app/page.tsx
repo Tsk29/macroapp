@@ -1,10 +1,11 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   ArrowRight, CheckCircle2, Loader2, Sparkles,
   UploadCloud, X, UtensilsCrossed, Flame, Dumbbell,
-  Wheat, Droplets, LogOut, BookMarked, RefreshCw, Plus, Minus
+  Wheat, Droplets, LogOut, BookMarked, RefreshCw, Plus, Minus,
+  ShoppingCart, Zap, ArrowLeftRight
 } from 'lucide-react';
 import { useNutritionAgent } from './hooks';
 
@@ -14,7 +15,8 @@ const allCuisines = [
   { name: 'Mexican',       emoji: '🌮' },
   { name: 'Asian',         emoji: '🍜' },
   { name: 'American',      emoji: '🥩' },
-  { name: 'Greek',         emoji: '🥙' },
+  { name: 'Indian',        emoji: '🍛' },
+  { name: 'Chinese',       emoji: '🥡' },
 ];
 
 type IngredientInput = { id: string; name: string; amount: number; unit: 'g' | 'ml' | 'whole' };
@@ -73,6 +75,65 @@ function MacroRing({ pct, color, label, value }: { pct: number; color: string; l
       <div className="text-center">
         <div className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>{value}</div>
         <div className="text-xs" style={{ color: 'var(--sage)' }}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── MacroPie — SVG donut chart for recipe macros ──────────────────────────────
+function MacroPie({ protein, carbs, fat }: { protein: number; carbs: number; fat: number }) {
+  const total = (protein * 4) + (carbs * 4) + (fat * 9);
+  if (total <= 0) return null;
+  const protCal = protein * 4;
+  const carbCal = carbs * 4;
+  const fatCal  = fat * 9;
+  const slices = [
+    { label: 'Protein', value: protCal, color: '#0ea5e9', grams: protein, unit: 'g' },
+    { label: 'Carbs',   value: carbCal, color: '#f59e0b', grams: carbs,   unit: 'g' },
+    { label: 'Fat',     value: fatCal,  color: '#ef4444', grams: fat,     unit: 'g' },
+  ];
+  const cx = 60; const cy = 60; const r = 44; const hole = 26;
+  let angle = -Math.PI / 2;
+  const paths = slices.map(s => {
+    const frac = s.value / total;
+    const sweep = frac * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle);
+    const y1 = cy + r * Math.sin(angle);
+    angle += sweep;
+    const x2 = cx + r * Math.cos(angle);
+    const y2 = cy + r * Math.sin(angle);
+    const lf = sweep > Math.PI ? 1 : 0;
+    const xi1 = cx + hole * Math.cos(angle);
+    const yi1 = cy + hole * Math.sin(angle);
+    const xi2 = cx + hole * Math.cos(angle - sweep);
+    const yi2 = cy + hole * Math.sin(angle - sweep);
+    const d = `M ${x1} ${y1} A ${r} ${r} 0 ${lf} 1 ${x2} ${y2} L ${xi1} ${yi1} A ${hole} ${hole} 0 ${lf} 0 ${xi2} ${yi2} Z`;
+    return { ...s, d, pct: Math.round(frac * 100) };
+  });
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div className="section-label mb-3">Macro Distribution</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <svg width="120" height="120" viewBox="0 0 120 120">
+          {paths.map((p, i) => (
+            <path key={i} d={p.d} fill={p.color} opacity={0.85}>
+              <title>{p.label}: {p.pct}%</title>
+            </path>
+          ))}
+          <text x="60" y="55" textAnchor="middle" style={{ fontSize: 11, fill: 'var(--text-sub)', fontWeight: 600 }}>{total}</text>
+          <text x="60" y="69" textAnchor="middle" style={{ fontSize: 9, fill: 'var(--sage)' }}>kcal</text>
+        </svg>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {paths.map((p, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-main)' }}>{p.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--sage)' }}>{p.grams}g · {p.pct}%</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -156,8 +217,14 @@ export default function Home() {
   const {
     state, isLoading, error,
     generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals,
-    login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary,
+    login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap,
   } = useNutritionAgent();
+
+  const [swapReason, setSwapReason]         = useState('vegetarian');
+  const [isSwapping, setIsSwapping]         = useState(false);
+  const [cartCopied, setCartCopied]         = useState(false);
+  const [dailyCartCopied, setDailyCartCopied] = useState(false);
+  const [showSwapMenu, setShowSwapMenu]     = useState(false);
 
   const [isSavedMealsOpen, setIsSavedMealsOpen] = useState(false);
   const [savedMeals, setSavedMeals]           = useState<any[]>([]);
@@ -311,7 +378,61 @@ export default function Home() {
     });
     setLoggedStatus({});
     setSavedStatus({});
+    setShowSwapMenu(false);
     setActiveTab('build');
+  }
+
+  async function handleAiSwap(r: any) {
+    if (!r) return;
+    setIsSwapping(true);
+    setShowSwapMenu(false);
+    await aiSwap({
+      recipe: r,
+      reason: swapReason,
+      cuisine_preference: selectedCuisines,
+      meal_type: mealType,
+      target_calories: dailySummary ? dailySummary.remaining.calories : targetCalories,
+      target_protein:  dailySummary ? dailySummary.remaining.protein  : targetProtein,
+      target_carbs:    dailySummary ? dailySummary.remaining.carbs    : targetCarbs,
+      target_fat:      dailySummary ? dailySummary.remaining.fat      : targetFat,
+    });
+    setIsSwapping(false);
+    setSavedStatus({});
+    setLoggedStatus({});
+  }
+
+  function handleReweCart() {
+    const items = state?.scraper_results?.items ?? [];
+    const missing = recipe?.missing_ingredients ?? [];
+    const lines: string[] = [];
+    if (items.length > 0) {
+      items.forEach((it: any) => lines.push(`${it.name} — €${(it.price ?? 0).toFixed(2)}${it.store ? ' @ ' + it.store : ''}`));
+    } else {
+      missing.forEach((n: string) => lines.push(n));
+    }
+    if (lines.length === 0) return;
+    const text = `🛒 REWE Shopping List:\n` + lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setCartCopied(true);
+      setTimeout(() => setCartCopied(false), 3000);
+    });
+    // Open REWE search in new tab for first item
+    const first = items[0]?.name || missing[0];
+    if (first) window.open(`https://www.rewe.de/search/?search=${encodeURIComponent(first)}`, '_blank');
+  }
+
+  function handleDailyReweCart() {
+    const items = dailySummary?.shopping_items ?? [];
+    if (items.length === 0) return;
+    const lines: string[] = [];
+    items.forEach((it: any) => lines.push(`${it.name} — €${(it.price ?? 0).toFixed(2)}${it.store ? ' @ ' + it.store : ''}`));
+    const text = `🛒 Daily REWE Shopping List:\n` + lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setDailyCartCopied(true);
+      setTimeout(() => setDailyCartCopied(false), 3000);
+    });
+    const first = items[0]?.name;
+    if (first) window.open(`https://www.rewe.de/search/?search=${encodeURIComponent(first)}`, '_blank');
   }
 
   async function handleSaveMeal(recipeToSave: any) {
@@ -508,17 +629,42 @@ export default function Home() {
                 })}
               </div>
 
-              {/* Rewe Daily Shopping Total chip — only after meals logged with cost */}
-              {dailySummary?.total_shopping_cost > 0 && (
-                <div className="mt-4 flex items-center justify-between rounded-2xl px-4 py-3"
-                  style={{ background: 'linear-gradient(135deg, rgba(45,85,54,0.10), rgba(90,168,110,0.08))', border: '1px solid rgba(45,85,54,0.18)' }}>
-                  <div>
-                    <div className="section-label" style={{ marginBottom: 2 }}>🛒 Today's Rewe Bill</div>
-                    <div className="text-xs" style={{ color: 'var(--sage)' }}>{dailySummary.shopping_items?.length || 0} items</div>
+              {/* Rewe Daily Shopping Things to Buy box */}
+              {dailySummary && dailySummary.shopping_items && dailySummary.shopping_items.length > 0 && (
+                <div className="mt-6 glass-card p-4 fade-up" style={{ border: '1px solid rgba(45,85,54,0.15)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <div className="section-label mb-0.5">🛒 Things to Buy</div>
+                      <h3 className="text-sm font-bold" style={{ color: 'var(--text-main)' }}>
+                        End of day missing ingredients
+                      </h3>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs" style={{ color: 'var(--sage)' }}>Total estimate</div>
+                      <div className="text-lg font-bold" style={{ color: 'var(--green-700)' }}>€{dailySummary.total_shopping_cost.toFixed(2)}</div>
+                    </div>
                   </div>
-                  <div className="text-xl font-bold" style={{ color: 'var(--green-700)' }}>
-                    €{dailySummary.total_shopping_cost.toFixed(2)}
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+                    {dailySummary.shopping_items.map((item: any, idx: number) => (
+                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, background: 'rgba(255,255,255,0.4)', padding: '6px 10px', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green-600)' }} />
+                          <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.name}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {item.store && <span style={{ fontSize: 10, background: 'rgba(45,85,54,0.1)', padding: '2px 6px', borderRadius: 10, color: 'var(--sage)' }}>{item.store}</span>}
+                          <span style={{ fontWeight: 700, color: 'var(--text-sub)' }}>€{(item.price ?? 0).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
+
+                  <button onClick={handleDailyReweCart}
+                    className="pill-btn w-full"
+                    style={{ background: 'linear-gradient(135deg, var(--green-600), var(--green-700))', color: 'white', padding: '10px', border: 'none' }}>
+                    {dailyCartCopied ? <><CheckCircle2 className="h-4 w-4" /> Copied! Opening REWE…</> : <><ShoppingCart className="h-4 w-4" /> 🛒 Buy All on REWE</>}
+                  </button>
                 </div>
               )}
             </div>
@@ -572,10 +718,17 @@ export default function Home() {
                   )}
 
                   {receipt.total > 0 && (
-                    <div className="flex items-center justify-between mt-1"
-                      style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#2d5536,#4a8856)', borderRadius: 14, color: '#fff', fontWeight: 700 }}>
-                      <span>Total from {String(receipt.store ?? 'Rewe')}</span>
-                      <span>€{receipt.total.toFixed(2)}</span>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6, marginTop:4 }}>
+                      <div className="flex items-center justify-between"
+                        style={{ padding: '10px 14px', background: 'linear-gradient(135deg,#2d5536,#4a8856)', borderRadius: 14, color: '#fff', fontWeight: 700 }}>
+                        <span>Total from {String(receipt.store ?? 'Rewe')}</span>
+                        <span>€{receipt.total.toFixed(2)}</span>
+                      </div>
+                      {/* ── One-click REWE Cart ── */}
+                      <button onClick={handleReweCart}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'10px 14px', background: cartCopied ? 'linear-gradient(135deg,#0ea5e9,#0284c7)' : 'rgba(14,165,233,0.12)', border:'1.5px solid rgba(14,165,233,0.30)', borderRadius:14, cursor:'pointer', fontWeight:600, fontSize:13, color: cartCopied ? '#fff' : '#0369a1', transition:'all 0.3s' }}>
+                        {cartCopied ? <><CheckCircle2 className="h-4 w-4" /> Copied! Opening REWE…</> : <><ShoppingCart className="h-4 w-4" /> 🛒 One-Click REWE Cart</>}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -892,6 +1045,24 @@ export default function Home() {
                             className="badge" style={{ background:'rgba(249,115,22,0.10)', color:'#9a3412', border:'1px solid rgba(249,115,22,0.2)', cursor:'pointer', padding:'6px 14px', fontSize:13 }}>
                             <RefreshCw className="h-3.5 w-3.5" /> Regenerate
                           </button>
+                          {/* ── AI Meal Swap ── */}
+                          <div style={{ position: 'relative' }}>
+                            <button onClick={() => setShowSwapMenu(s => !s)} disabled={isLoading || isSwapping}
+                              className="badge" style={{ background:'rgba(139,92,246,0.12)', color:'#6d28d9', border:'1px solid rgba(139,92,246,0.25)', cursor:'pointer', padding:'6px 14px', fontSize:13 }}>
+                              {isSwapping ? <><Loader2 className="h-3.5 w-3.5 spin" /> Swapping…</> : <><ArrowLeftRight className="h-3.5 w-3.5" /> AI Swap</>}
+                            </button>
+                            {showSwapMenu && (
+                              <div style={{ position:'absolute', top:'110%', right:0, zIndex:99, background:'#fff', borderRadius:14, boxShadow:'0 8px 32px rgba(0,0,0,0.14)', padding:14, minWidth:190, border:'1px solid rgba(45,85,54,0.12)' }}>
+                                <div className="section-label mb-2">Swap Style</div>
+                                {['vegetarian','lower carb','high protein','budget','gluten free'].map(r => (
+                                  <button key={r} onClick={() => { setSwapReason(r); handleAiSwap(recipe); }}
+                                    style={{ display:'block', width:'100%', textAlign:'left', padding:'7px 10px', borderRadius:10, border:'none', cursor:'pointer', fontSize:13, fontWeight: swapReason===r ? 700 : 400, background: swapReason===r ? 'rgba(139,92,246,0.10)' : 'transparent', color:'var(--text-main)', marginBottom:2 }}>
+                                    {r === 'vegetarian' ? '🥦' : r === 'lower carb' ? '🥩' : r === 'high protein' ? '💪' : r === 'budget' ? '💰' : '🌾'} {r.charAt(0).toUpperCase() + r.slice(1)}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -922,6 +1093,12 @@ export default function Home() {
                           </ol>
                         </div>
                       </div>
+                      {/* ── Macro Distribution Pie ── */}
+                      <MacroPie
+                        protein={macroFit.protein_achieved}
+                        carbs={macroFit.carbs_achieved}
+                        fat={macroFit.fat_achieved}
+                      />
                     </div>
                   </div>
                 )}

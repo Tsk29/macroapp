@@ -8,7 +8,8 @@ Powered by **LangGraph**, the agent intelligently parses your pantry using compu
 
 - 📸 **Pantry Vision Parsing**: Take a photo of your fridge or pantry, and the LLaMA 3.2 Vision model will automatically extract ingredients and estimate their weights in grams.
 - 🎯 **Daily Macro Tracking**: Set daily targets for Calories, Protein, Carbs, and Fat. The app intelligently keeps track of your remaining macros throughout the day.
-- 🤖 **Agentic Recipe Generation**: Using LangGraph and Groq's fast LLMs, the agent curates realistic recipes based on your cuisine preferences (e.g. Italian, Mexican, Asian) and what ingredients you currently have.
+- 🤖 **Agentic Recipe Generation**: Using LangGraph and Groq's fast LLMs, the agent curates realistic recipes based on your cuisine preferences (e.g. Indian, Chinese, Italian) and what ingredients you currently have.
+- 🛒 **Automated REWE Grocery Checkout**: The agent tracks missing cultural spices and ingredients across your logged meals and provides a 1-click REWE export at the end of the day.
 - 📊 **Daily Diary**: An elegant, persistent sidebar layout that organizes your meals (Breakfast, Lunch, Dinner, Snacks) and tracks your daily progress in real time.
 - 💾 **Session & Recipe Management**: Safely create an account to save your profile macros. You can log meals to today's diary, save favorite recipes to your personal cookbook, and instantly regenerate new ideas if you don't like the AI's first suggestion.
 - 🌐 **Modern UI/UX**: Built with React, Next.js, and Tailwind CSS, featuring a sleek, dark-themed, glassmorphism dashboard designed for responsiveness and aesthetics.

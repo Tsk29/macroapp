@@ -317,59 +317,75 @@ async def generate_recipe_llm(
     target_carbs: int = 0,
     target_fat: int = 0,
 ) -> dict:
+    import re as _re
+    import traceback as _tb
     if not ingredients:
         return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Prep ingredients", "Cook", "Serve"]}
-    
+
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
     ingredient_list = ", ".join(f"{i.amount}{i.unit} {i.name}" for i in ingredients)
 
     macro_block = ""
     if target_calories or target_protein:
         macro_block = f"""
-TARGET MACROS — you MUST hit these numbers with your portion choices:
-  • Calories : {target_calories} kcal
-  • Protein  : {target_protein} g
-  • Carbs    : {target_carbs} g
-  • Fat      : {target_fat} g
+TARGET MACROS — hit these numbers with your portion choices:
+  Calories: {target_calories} kcal | Protein: {target_protein}g | Carbs: {target_carbs}g | Fat: {target_fat}g
+Adjust gram weights of ingredients so the TOTAL meal hits these targets.
+Do NOT exceed the calorie target by more than 10%."""
 
-CRITICAL MACRO RULES:
-- Adjust gram weights of ingredients so the TOTAL meal hits the target macros.
-- Always state exact gram amounts (e.g. "180g chicken breast", "90g brown rice cooked").
-- If the base ingredients cannot reach the protein target alone, add a complementary
-  protein source that fits the {cuisine} cuisine (e.g. Greek yoghurt for Mediterranean,
-  paneer for Indian, tofu for Asian).
-- Do NOT exceed the calorie target by more than 10%.
-"""
+    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object. No markdown, no explanations."
+    user_msg = (
+        f"Create a {cuisine} {meal_type} recipe using these ingredients: {ingredient_list}."
+        f"{macro_block}\n\n"
+        "Respond with a JSON object containing exactly these keys:\n"
+        '- "title": a creative authentic dish name\n'
+        '- "meal_structure": short plating description (e.g. "Main + Side")\n'
+        '- "instructions": array of at least 5 highly detailed, step-by-step cooking instructions. Write like a Michelin-star chef giving explicit directions with temperatures, timings, and techniques. Do NOT write short or lazy instructions.\n'
+        f'- "additional_ingredients": array of extra ingredients YOU MUST add to achieve an authentic {cuisine} flavor profile. Include essential cultural spices, sauces, or herbs (e.g., cumin, soy sauce, garam masala, star anise, ginger) that are not already in the provided ingredients list.\n\n'
+        f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings."
+    )
 
-    prompt = f"""You are a Michelin-star chef AND a certified sports nutritionist specialising in {cuisine}.
+    models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
 
-RULE 1: CUISINE FIDELITY. Strictly follow the flavour profiles and cooking techniques of {cuisine}.
-RULE 2: NO-SLOP. Never mix incompatible ingredients into one pot. If the user provides Chicken, Pasta, and Black Beans, cook them separately and plate properly.
-RULE 3: ZERO HALLUCINATION. Use the user's ingredients as the foundation. If an ingredient violates {cuisine}, serve it as a disconnected side or adapt it transparently.
-RULE 4: REALISTIC BRIDGING. Any added ingredients must fit {cuisine} authentically (e.g., no soy sauce in Italian; use capers or parmesan).
-RULE 5: AUTHENTIC SPICING. Name exact spices characteristic of {cuisine} (e.g., "Garam Masala, Turmeric, Cumin" for Indian; "Oregano, Basil" for Italian).
-{macro_block}
-Meal Type: {meal_type}
-Provided Ingredients: {ingredient_list}
+    for model in models_to_try:
+        try:
+            response = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_msg},
+                    {"role": "user", "content": user_msg},
+                ],
+                model=model,
+                max_completion_tokens=4000,
+                temperature=0.7,
+            )
+            raw = response.choices[0].message.content or ""
+            raw = raw.strip()
+            # Strip <think>...</think> tags from reasoning models (qwen)
+            raw = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
+            # Strip markdown code fences if present
+            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+            raw = _re.sub(r'\s*```$', '', raw)
+            raw = raw.strip()
+            # Extract first JSON object
+            match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+            if match:
+                parsed = json.loads(match.group(0))
+                if "instructions" in parsed and len(parsed["instructions"]) >= 1:
+                    print(f"[generate_recipe_llm] success with {model}, {len(parsed['instructions'])} steps")
+                    return parsed
+        except Exception as e:
+            _tb.print_exc()
+            print(f"[generate_recipe_llm] model {model} failed: {e}")
+            continue
 
-Return ONLY a valid JSON object with:
-- "title": A creative, highly authentic dish name.
-- "meal_structure": A short plating description (e.g. "Main + 2 Sides").
-- "instructions": An array of step-by-step instruction strings. Each step must include exact gram weights.
-- "additional_ingredients": An array of any extra ingredients used (spices, oils, etc.) not in the provided list."""
-
-    try:
-        response = client.chat.completions.create(
-            messages=[{"role": "user", "content": prompt}],
-            model="llama-3.3-70b-versatile",
-            response_format={"type": "json_object"},
-        )
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Groq generation failed: {e}")
-        return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Cook ingredients.", "Serve."]}
+    # All models failed — use high-quality rule-based fallback
+    print("[generate_recipe_llm] all models failed, using create_realistic_instructions")
+    return {
+        "title": f"{cuisine} {meal_type}",
+        "meal_structure": "Main Plate",
+        "instructions": create_realistic_instructions(ingredients, meal_type),
+        "additional_ingredients": [],
+    }
 
 
 
@@ -727,7 +743,7 @@ async def parse_image_node(image_base64: str) -> list[IngredientInput]:
             }
         ],
         model="llama-3.2-90b-vision-preview",
-        response_format={"type": "json_object"},
+        
     )
 
     output_text = response.choices[0].message.content
@@ -933,7 +949,6 @@ async def scraper_node(state: AppState) -> AppState:
                 raw_data_context += f"Ingredient: {ingredient}\\nWeb Search Results: {web_result}\\n\\n"
             else:
                 raw_data_context += f"Ingredient: {ingredient}\\nRewe API Result: {rewe_result}\\n\\n"
-
         # Step 2: Use LLM strictly for parsing the raw data into JSON
         messages = [
             {
@@ -943,17 +958,20 @@ async def scraper_node(state: AppState) -> AppState:
                     "Extract the name, store, and price for each ingredient from the provided raw data context. "
                     "Output ONLY a JSON object with a single key 'items' containing an array of objects. "
                     "Each object must have: 'name' (string), 'store' (string), and 'price' (float). "
-                    "If a price is missing, estimate a reasonable price."
+                    "If a price is missing, estimate a reasonable price. "
+                    "You must return ONLY a JSON object. Do not output any thinking process, explanations, markdown formatting, or introductory/concluding remarks. "
+                    "Start your response with '{' and end with '}'."
                 )
             },
             {
                 "role": "user",
-                "content": f"Raw Data Context:\\n{raw_data_context}"
+                "content": f"Raw Data Context:\n{raw_data_context}"
             }
         ]
 
         final_json_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="openai/gpt-oss-120b",
+            max_completion_tokens=4000,
             messages=messages,
             response_format={"type": "json_object"}
         )
@@ -996,326 +1014,5 @@ async def scraper_node(state: AppState) -> AppState:
     )
     state.shopping_estimate = float(state.scraper_results.total_cost)
     state.scraper_report = f"Found {len(scraper_items)} missing ingredients using Rewe API & Web Search."
-
-    return state
-
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-    
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "search_rewe_api",
-                "description": "Searches the REWE API for the price of a grocery item.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The grocery item (e.g., 'Hähnchenbrust', 'Olivenöl').",
-                        },
-                        "zip_code": {
-                            "type": "string",
-                            "description": "The German postal code (default '10115').",
-                        }
-                    },
-                    "required": ["query"],
-                },
-            },
-        },
-        {
-            "type": "function",
-            "function": {
-                "name": "search_web_for_price",
-                "description": "Fallback tool. Searches the live web using DuckDuckGo to find the current price of a grocery item if the API is blocked.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The search query (e.g., 'Rewe Hähnchenbrust Preis' or 'Aldi Olivenöl Preis').",
-                        }
-                    },
-                    "required": ["query"],
-                },
-            },
-        }
-    ]
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are a German shopping assistant. The user needs to buy missing ingredients. "
-                "For each ingredient, ALWAYS try the 'search_rewe_api' tool FIRST. "
-                "If 'search_rewe_api' returns an error (like HTTP 403 or blocked), you MUST use the 'search_web_for_price' tool as a fallback to scrape the price from DuckDuckGo snippets. "
-                "Once you have the data, summarize the lowest price found for each ingredient. "
-                "IMPORTANT: ALWAYS use the native tool calling API. NEVER output raw text like <function=...>. Just call the tools normally."
-            )
-        },
-        {
-            "role": "user",
-            "content": f"Please find these ingredients: {', '.join(state.missing_ingredients)}"
-        }
-    ]
-
-    scraper_items: list[ScraperItem] = []
-    
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-        )
-        messages.append(response.choices[0].message)
-        
-        while response.choices[0].message.tool_calls:
-            for tool_call in response.choices[0].message.tool_calls:
-                args = json.loads(tool_call.function.arguments)
-                
-                if tool_call.function.name == "search_rewe_api":
-                    result = search_rewe_api(args["query"], args.get("zip_code", "10115"))
-                elif tool_call.function.name == "search_web_for_price":
-                    result = search_web_for_price(args["query"])
-                else:
-                    result = {"error": "Unknown tool"}
-                    
-                messages.append({
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": tool_call.function.name,
-                    "content": json.dumps(result),
-                })
-            
-            # Send the tool results back to the LLM
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages,
-                tools=tools,
-            )
-            messages.append(response.choices[0].message)
-            
-        # The LLM's final message contains the summary. 
-        # We parse the text to extract the items (simplified for the demo).
-        final_text = response.choices[0].message.content or ""
-        
-        # If the LLM successfully gathered data, we parse it into our schema
-        # For robustness, we ask the LLM to output a JSON array at the very end
-        messages.append({
-            "role": "user",
-            "content": "Now output ONLY a JSON array of objects with fields: 'name', 'store' (e.g. 'Rewe' or 'Web Search'), and 'price' (a float). No markdown, no other text."
-        })
-        
-        final_json_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            response_format={"type": "json_object"}
-        )
-        
-        # We told it to return an array, but JSON object mode forces an object.
-        # Let's handle if it returns {"items": [...]}
-        try:
-            raw_content = final_json_response.choices[0].message.content
-            print("Raw LLM Response:", raw_content)
-            parsed = json.loads(raw_content)
-            print("Parsed LLM Response:", parsed)
-            items_list = parsed.get("items") or parsed.get("ingredients") or list(parsed.values())[0]
-            print("Items List:", items_list)
-            if isinstance(items_list, list):
-                for item in items_list:
-                    print("Appending item:", item)
-                    scraper_items.append(ScraperItem(
-                        name=item.get("name", "Unknown"),
-                        store=item.get("store", "Web Search"),
-                        price=float(item.get("price", 0.0))
-                    ))
-        except Exception as json_err:
-            print(f"Failed to parse LLM JSON summary: {json_err}")
-
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Scraper LLM failed: {e}")
-
-    # Fallback if everything fails
-    if not scraper_items:
-        for ingredient in state.missing_ingredients:
-            scraper_items.append(ScraperItem(name=ingredient, store="Fallback", price=2.99))
-
-    # Deduplicate items by name
-    unique_items = {}
-    for item in scraper_items:
-        unique_items[item.name.lower()] = item
-    scraper_items = list(unique_items.values())
-
-    total_cost = sum(item.price for item in scraper_items)
-    cheapest_store = min(scraper_items, key=lambda item: item.price).store if scraper_items else None
-
-    state.scraper_results = ScraperResults(
-        items=scraper_items,
-        cheapest_store_overall=cheapest_store,
-        total_cost=round(total_cost, 2),
-    )
-    state.shopping_estimate = float(state.scraper_results.total_cost)
-    state.scraper_report = f"Found {len(scraper_items)} missing ingredients using Rewe API & Web Search."
-
-    return state
-
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-    
-    tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "search_grocery_db",
-                "description": "Searches the supermarket database for the best price of a given grocery item.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "The name of the grocery item to search for (e.g., 'chicken breast', 'olive oil').",
-                        }
-                    },
-                    "required": ["query"],
-                },
-            },
-        }
-    ]
-
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a shopping assistant. The user needs to buy the following missing ingredients. "
-                       "Use the 'search_grocery_db' tool to look up the best price and store for EACH ingredient. "
-                       "After you have retrieved the info for ALL ingredients, summarize the findings."
-        },
-        {
-            "role": "user",
-            "content": f"Please find these ingredients: {', '.join(state.missing_ingredients)}"
-        }
-    ]
-
-    scraper_items: list[ScraperItem] = []
-    
-    # We loop to allow the LLM to call the tool, then we return the results to it.
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=messages,
-            tools=tools,
-            tool_choice="auto",
-        )
-        messages.append(response.choices[0].message)
-        
-        # If the LLM decided to call tools
-        while response.choices[0].message.tool_calls:
-            for tool_call in response.choices[0].message.tool_calls:
-                if tool_call.function.name == "search_grocery_db":
-                    args = json.loads(tool_call.function.arguments)
-                    result = search_grocery_db(args["query"])
-                    
-                    messages.append({
-                        "tool_call_id": tool_call.id,
-                        "role": "tool",
-                        "name": "search_grocery_db",
-                        "content": json.dumps(result),
-                    })
-                    
-                    if "error" not in result:
-                        scraper_items.append(ScraperItem(
-                            name=result["name"],
-                            store=result["store"],
-                            price=float(result["price"])
-                        ))
-            
-            # Send the tool results back to the LLM to get the final summary
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=messages,
-            )
-            messages.append(response.choices[0].message)
-            
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"Scraper LLM failed: {e}")
-
-    # Fallback to simulated data if tool calling completely failed or returned nothing
-    if not scraper_items:
-        def normalize_name(name: str) -> str:
-            return name.strip().lower()
-        def scrape_price_for_store(store: str, query: str) -> float:
-            import hashlib
-            hash_val = int(hashlib.md5(f"{store}:{query}".encode()).hexdigest(), 16)
-            return round(1.0 + (hash_val % 400) / 100.0, 2)
-            
-        for ingredient in state.missing_ingredients:
-            scraper_items.append(ScraperItem(name=ingredient, store="Lidl", price=scrape_price_for_store("Lidl", ingredient)))
-
-    # Deduplicate items by name
-    unique_items = {}
-    for item in scraper_items:
-        unique_items[item.name.lower()] = item
-    scraper_items = list(unique_items.values())
-
-    total_cost = sum(item.price for item in scraper_items)
-    cheapest_store = min(scraper_items, key=lambda item: item.price).store if scraper_items else None
-
-    state.scraper_results = ScraperResults(
-        items=scraper_items,
-        cheapest_store_overall=cheapest_store,
-        total_cost=round(total_cost, 2),
-    )
-    state.shopping_estimate = float(state.scraper_results.total_cost)
-    state.scraper_report = f"Found {len(scraper_items)} missing ingredients via local Vector DB."
-
-    return state
-
-    def normalize_name(name: str) -> str:
-        return name.strip().lower()
-
-    search_urls = {
-        "Lidl": "https://www.lidl.de/q/search?q={}",
-        "Aldi Süd": "https://www.aldi-sued.de/de/search.html?query={}",
-        "Netto": "https://www.netto-online.de/explorer/search?w={}",
-    }
-
-    await asyncio.sleep(0.1)
-
-    def scrape_price_for_store(store: str, query: str) -> float:
-        import hashlib
-        hash_val = int(hashlib.md5(f"{store}:{query}".encode()).hexdigest(), 16)
-        return round(1.0 + (hash_val % 400) / 100.0, 2)
-
-    scraper_items: list[ScraperItem] = []
-    for ingredient in state.missing_ingredients:
-        normalized = normalize_name(ingredient)
-        best_price = float("inf")
-        best_store = ""
-
-        for store, template in search_urls.items():
-            query = normalized.replace(" ", "+")
-            _ = template.format(query)
-            price = scrape_price_for_store(store, query)
-            if price < best_price:
-                best_price = price
-                best_store = store
-
-        scraper_items.append(ScraperItem(name=ingredient, store=best_store, price=best_price))
-
-    total_cost = sum(item.price for item in scraper_items)
-    cheapest_store = min(scraper_items, key=lambda item: item.price).store if scraper_items else None
-
-    state.scraper_results = ScraperResults(
-        items=scraper_items,
-        cheapest_store_overall=cheapest_store,
-        total_cost=round(total_cost, 2),
-    )
-    state.shopping_estimate = float(state.scraper_results.total_cost)
-    state.scraper_report = (
-        f"Found {len(scraper_items)} missing ingredients online across Lidl, Aldi Süd, and Netto."
-    )
 
     return state

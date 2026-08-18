@@ -167,6 +167,74 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+class SwapRequest(BaseModel):
+    recipe: Recipe
+    reason: str = "healthier"          # e.g. "lower carb", "vegetarian", "budget"
+    cuisine_preference: list[str] = Field(default_factory=list)
+    meal_type: str = "Lunch"
+    target_calories: int = 0
+    target_protein: int = 0
+    target_carbs: int = 0
+    target_fat: int = 0
+
+
+@app.post("/ai_swap", response_model=AppState)
+async def ai_swap(req: SwapRequest) -> AppState:
+    """Generate an alternative recipe using the same ingredients with a different cuisine spin."""
+    from nodes import generate_recipe_llm, estimate_macros
+    from schemas import MacroFit
+
+    cuisine = req.cuisine_preference[0] if req.cuisine_preference else "Mediterranean"
+    swap_ingredients = req.recipe.ingredients or []
+
+    result = await generate_recipe_llm(
+        ingredients=swap_ingredients,
+        cuisine=cuisine,
+        meal_type=req.meal_type or req.recipe.meal_type or "Lunch",
+        target_calories=req.target_calories,
+        target_protein=req.target_protein,
+        target_carbs=req.target_carbs,
+        target_fat=req.target_fat,
+    )
+
+    # Compute macros
+    totals = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    for ing in swap_ingredients:
+        m = estimate_macros(ing)
+        for k in totals:
+            totals[k] += m[k]
+
+    macro_fit = MacroFit(
+        calories_target=req.target_calories,
+        calories_achieved=totals["calories"],
+        calories_delta=totals["calories"] - req.target_calories,
+        protein_target=req.target_protein,
+        protein_achieved=totals["protein"],
+        protein_delta=totals["protein"] - req.target_protein,
+        carbs_target=req.target_carbs,
+        carbs_achieved=totals["carbs"],
+        carbs_delta=totals["carbs"] - req.target_carbs,
+        fat_target=req.target_fat,
+        fat_achieved=totals["fat"],
+        fat_delta=totals["fat"] - req.target_fat,
+        match_score_percentage=0,
+    )
+
+    meal_type_used = req.meal_type or req.recipe.meal_type or "Lunch"
+    new_recipe = Recipe(
+        name=result.get("title", f"Swapped {cuisine} Meal"),
+        title=result.get("title", f"Swapped {cuisine} Meal"),
+        meal_type=meal_type_used,
+        cuisine=cuisine,
+        ingredients=swap_ingredients,
+        instructions=result.get("instructions", []),
+        macro_fit=macro_fit,
+    )
+    final = AppState(generated_recipe=new_recipe, display_recipe=new_recipe)
+    return final
+
+
+
 SAVED_MEALS_FILE = BASE_DIR / "saved_meals.json"
 
 def get_saved_meals() -> list[dict]:

@@ -215,5 +215,36 @@ export function useNutritionAgent() {
     }
   }
 
-  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary };
+  async function aiSwap(payload: {
+    recipe: any;
+    reason: string;
+    cuisine_preference: string[];
+    meal_type: string;
+    target_calories: number;
+    target_protein: number;
+    target_carbs: number;
+    target_fat: number;
+  }) {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch('http://127.0.0.1:8001/ai_swap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error(`Swap failed: ${response.status}`);
+      const data = await response.json();
+      setState(data);
+      return data;
+    } catch (err) {
+      console.error('AI swap error:', err);
+      setError(err instanceof Error ? err.message : 'Swap failed');
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap };
 }
