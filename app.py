@@ -14,14 +14,14 @@ from pydantic import BaseModel, Field
 import json
 import hashlib
 from main import run_workflow
-from schemas import AppState, IngredientInput, Recipe, UserProfile, LoginRequest, LogMealRequest, RegisterRequest
+from schemas import AppState, IngredientInput, Recipe, UserProfile, LoginRequest, LogMealRequest, RegisterRequest, EstimateCustomFoodRequest, EstimateCustomFoodResponse
 
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="Nutrition Agent Web UI")
+app = FastAPI(title="Genau Meal Web UI")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -99,6 +99,19 @@ async def generate_api(payload: SubmitPayload) -> AppState:
     final_state = await run_workflow(state)
     return final_state
 
+@app.post("/parse_pantry_image")
+async def parse_pantry_image(upload: UploadFile = File(...)):
+    import base64
+    file_extension = Path(upload.filename).suffix.lower()
+    if file_extension not in {".png", ".jpg", ".jpeg", ".webp"}:
+        raise HTTPException(status_code=400, detail="Unsupported image format.")
+    
+    contents = await upload.read()
+    image_base64 = base64.b64encode(contents).decode("utf-8")
+    
+    from nodes import parse_image_node
+    ingredients = await parse_image_node(image_base64)
+    return [ing.model_dump() for ing in ingredients]
 
 @app.post("/submit", response_class=HTMLResponse)
 async def submit(
@@ -283,6 +296,12 @@ def save_logs(logs: dict):
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
+
+@app.post("/estimate_custom_food")
+async def estimate_custom_food(req: EstimateCustomFoodRequest) -> EstimateCustomFoodResponse:
+    from nodes import estimate_custom_food_llm
+    res = await estimate_custom_food_llm(req.query)
+    return EstimateCustomFoodResponse(**res)
 
 @app.post("/register")
 async def register(req: RegisterRequest) -> UserProfile:

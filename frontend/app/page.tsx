@@ -5,7 +5,7 @@ import {
   ArrowRight, CheckCircle2, Loader2, Sparkles,
   UploadCloud, X, UtensilsCrossed, Flame, Dumbbell,
   Wheat, Droplets, LogOut, BookMarked, RefreshCw, Plus, Minus,
-  ShoppingCart, Zap, ArrowLeftRight
+  ShoppingCart, ArrowLeftRight, Leaf, Camera, ChefHat
 } from 'lucide-react';
 import { useNutritionAgent } from './hooks';
 
@@ -151,14 +151,14 @@ function LoginPage({ onLogin, onRegister, error, isLoading }: {
   const [isReg, setIsReg] = useState(false);
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6"
+    <div className="min-h-screen flex items-center justify-center p-5"
       style={{ background: 'linear-gradient(160deg, #eef7f1 0%, #c5e1cf 100%)' }}>
       <div className="glass-card fade-up w-full max-w-md p-10">
         {/* Logo */}
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl"
             style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
-            <span className="text-3xl">🥗</span>
+            <Leaf className="h-8 w-8 text-white" strokeWidth={2.5} />
           </div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text-main)' }}>
             {isReg ? 'Create Account' : 'Welcome Back'}
@@ -218,6 +218,7 @@ export default function Home() {
     state, isLoading, error,
     generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals,
     login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap,
+    estimateCustomFood,
   } = useNutritionAgent();
 
   const [swapReason, setSwapReason]         = useState('vegetarian');
@@ -237,6 +238,10 @@ export default function Home() {
   const [loggedStatus, setLoggedStatus]       = useState<Record<string, boolean>>({});
   const [selectedImage, setSelectedImage]     = useState<File | null>(null);
   const [activeTab, setActiveTab]             = useState<'build' | 'diary' | 'stats'>('build');
+  const [showCustomFoodModal, setShowCustomFoodModal] = useState(false);
+  const [customFoodQuery, setCustomFoodQuery] = useState('');
+  const [customFood, setCustomFood]           = useState({ name: '', meal_type: 'Snack', calories: 0, protein: 0, carbs: 0, fat: 0 });
+  const [isEstimating, setIsEstimating]       = useState(false);
 
   const meals = useMemo(() => {
     if (mode === 'full_day') return state?.meal_plan?.meals ?? [];
@@ -284,6 +289,50 @@ export default function Home() {
   }, [dailySummary]);
 
   const getTodayString = () => new Date().toISOString().split('T')[0];
+
+  async function handleEstimateFood() {
+    if (!customFoodQuery.trim()) return;
+    setIsEstimating(true);
+    try {
+      const res = await estimateCustomFood(customFoodQuery);
+      if (res) {
+        setCustomFood({
+          name: res.name || customFoodQuery,
+          meal_type: res.meal_type || 'Snack',
+          calories: res.calories || 0,
+          protein: res.protein || 0,
+          carbs: res.carbs || 0,
+          fat: res.fat || 0,
+        });
+      }
+    } finally {
+      setIsEstimating(false);
+    }
+  }
+
+  async function handleLogCustomFood() {
+    if (!customFood.name || customFood.calories <= 0) return;
+    const mockRecipe = {
+      name: customFood.name,
+      title: customFood.name,
+      meal_type: customFood.meal_type,
+      cuisine: 'Custom',
+      instructions: [],
+      ingredients: [],
+      missing_ingredients: [],
+      macro_fit: {
+        calories_achieved: customFood.calories,
+        protein_achieved: customFood.protein,
+        carbs_achieved: customFood.carbs,
+        fat_achieved: customFood.fat,
+      },
+    };
+    await logDailyMeal(userProfile.username, getTodayString(), mockRecipe, 0, []);
+    await fetchDailySummary(userProfile.username, getTodayString()).then(d => d && setDailySummary(d));
+    setShowCustomFoodModal(false);
+    setCustomFoodQuery('');
+    setCustomFood({ name: '', meal_type: 'Snack', calories: 0, protein: 0, carbs: 0, fat: 0 });
+  }
 
   // Restore session
   useEffect(() => {
@@ -418,7 +467,7 @@ export default function Home() {
     });
     // Open REWE search in new tab for first item
     const first = items[0]?.name || missing[0];
-    if (first) window.open(`https://www.rewe.de/search/?search=${encodeURIComponent(first)}`, '_blank');
+    if (first) window.open(`https://shop.rewe.de/search?searchFor=${encodeURIComponent(first)}`, '_blank');
   }
 
   function handleDailyReweCart() {
@@ -432,7 +481,7 @@ export default function Home() {
       setTimeout(() => setDailyCartCopied(false), 3000);
     });
     const first = items[0]?.name;
-    if (first) window.open(`https://www.rewe.de/search/?search=${encodeURIComponent(first)}`, '_blank');
+    if (first) window.open(`https://shop.rewe.de/search?searchFor=${encodeURIComponent(first)}`, '_blank');
   }
 
   async function handleSaveMeal(recipeToSave: any) {
@@ -475,10 +524,10 @@ export default function Home() {
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl"
             style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
-            <span className="text-lg">🥗</span>
+            <Leaf className="h-5 w-5 text-white" strokeWidth={2.5} />
           </div>
           <div>
-            <div className="text-base font-bold" style={{ color: 'var(--text-main)' }}>NutriPlan</div>
+            <div className="text-base font-bold" style={{ color: 'var(--text-main)' }}>Genau Meal</div>
             <div className="text-xs" style={{ color: 'var(--sage)' }}>Hi, {userProfile.username} 👋</div>
           </div>
         </div>
@@ -539,13 +588,13 @@ export default function Home() {
 
       {/* ── Main Grid ── */}
       <main style={{ maxWidth: '1380px', margin: '16px auto 32px', padding: '0 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '12px' }}>
 
           {/* ══ LEFT PANEL ══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
             {/* Macro overview rings */}
-            <div className="glass-card p-5">
+            <div className="glass-card p-4">
               <div className="section-label mb-4">Today's Progress</div>
               <div className="flex items-center justify-around">
                 <MacroRing pct={calPct}  color="#4a8856" label="Calories" value={`${consumed.calories} kcal`} />
@@ -580,14 +629,19 @@ export default function Home() {
             </div>
 
             {/* Daily Diary */}
-            <div className="glass-card p-5" style={{ flex: 1 }}>
+            <div className="glass-card p-4" style={{ flex: 1 }}>
               <div className="flex items-center justify-between mb-4">
-                <div className="section-label">Daily Diary</div>
-                <span className="badge badge-green">{dailySummary?.meals?.length || 0} logged</span>
+                <div className="flex items-center gap-2">
+                  <span className="badge badge-green">{dailySummary?.meals?.length || 0} logged</span>
+                  <button onClick={() => setShowCustomFoodModal(true)}
+                    className="pill-btn pill-btn-green" style={{ padding: '6px 14px', fontSize: 12 }}>
+                    <Plus className="h-3.5 w-3.5" /> Log Food
+                  </button>
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                {(['Breakfast','Lunch','Dinner','Snacks'] as const).map(cat => {
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(['Breakfast','Lunch','Dinner','Snacks','Other'] as const).map(cat => {
                   const catMeals = categorizedMeals[cat];
                   const catKey   = cat.toLowerCase().replace('snacks','snack');
                   return (
@@ -671,7 +725,7 @@ export default function Home() {
 
             {/* ── Rewe Shopping List (live, from current generated recipe) ── */}
             {(receipt.missing.length > 0 || (recipe?.missing_ingredients?.length ?? 0) > 0) && (
-              <div className="glass-card p-5 fade-up">
+              <div className="glass-card p-4 fade-up">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <div className="section-label mb-0.5">🛒 Rewe Shopping List</div>
@@ -738,11 +792,11 @@ export default function Home() {
           </div>
 
           {/* ══ RIGHT PANEL ══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
             {/* Weekly Compliance Bar Chart */}
             {weeklyData.length > 0 && (
-              <div className="glass-card p-5 fade-up">
+              <div className="glass-card p-4 fade-up">
                 <div className="flex items-center justify-between mb-4">
                   <div>
                     <div className="section-label mb-1">This Week</div>
@@ -777,7 +831,7 @@ export default function Home() {
             )}
 
             {/* Build tab */}
-            <div className="glass-card p-6">
+            <div className="glass-card p-5">
               {/* Tabs (mobile) */}
               <div className="flex md:hidden gap-2 mb-6">
                 {([['build','🍳','Build'], ['diary','📓','Diary'], ['stats','📊','Stats']] as const).map(([tab,e,l]) => (
@@ -833,7 +887,7 @@ export default function Home() {
                 <div className="mb-4">
                   <div className="section-label mb-2">Meal Type</div>
                   <div className="flex gap-2 flex-wrap">
-                    {['Breakfast','Lunch','Dinner','Snack'].map(t => (
+                    {['Breakfast','Lunch','Dinner','Snack','Custom'].map(t => (
                       <button key={t} onClick={() => setMealType(t)}
                         className="pill-btn text-sm"
                         style={{ padding:'8px 16px', background: mealType===t ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'rgba(255,255,255,0.6)', color: mealType===t ? '#fff' : 'var(--text-sub)', border: mealType===t ? 'none' : '1.5px solid rgba(45,85,54,0.18)', borderRadius:12 }}>
@@ -926,7 +980,7 @@ export default function Home() {
 
             {/* ── Recipe / Meal Plan Result ── */}
             {meals.length > 0 && (
-              <div className="glass-card p-6 fade-up">
+              <div className="glass-card p-5 fade-up">
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <div className="section-label mb-1">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</div>
@@ -945,7 +999,7 @@ export default function Home() {
                   <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
                     {meals.map((meal: any) => (
                       <div key={`${meal.meal_type}-${meal.name}`} className="meal-card">
-                        <div className="flex gap-4 p-4">
+                        <div className="flex gap-3 p-4">
                           {/* Food emoji image */}
                           <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl text-4xl"
                             style={{ background: 'linear-gradient(135deg, rgba(45,85,54,0.12), rgba(90,168,110,0.18))' }}>
@@ -984,7 +1038,7 @@ export default function Home() {
                         </div>
                         {/* Ingredients + Instructions accordion */}
                         <div style={{ borderTop:'1px solid rgba(45,85,54,0.10)', padding:'12px 16px' }}>
-                          <div className="grid gap-4" style={{ gridTemplateColumns:'1fr 1fr' }}>
+                          <div className="grid gap-3" style={{ gridTemplateColumns:'1fr 1fr' }}>
                             <div>
                               <div className="section-label mb-2">Ingredients</div>
                               <ul style={{ display:'flex', flexDirection:'column', gap:4 }}>
@@ -1016,7 +1070,7 @@ export default function Home() {
                   </div>
                 ) : recipe && (
                   <div className="meal-card">
-                    <div className="flex gap-4 p-5">
+                    <div className="flex gap-3 p-4">
                       <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl text-5xl"
                         style={{ background:'linear-gradient(135deg, rgba(45,85,54,0.12), rgba(90,168,110,0.18))' }}>
                         {MEAL_FOOD_EMOJIS[recipe.meal_type?.toLowerCase()] || '🍴'}
@@ -1067,7 +1121,7 @@ export default function Home() {
                       </div>
                     </div>
                     <div style={{ borderTop:'1px solid rgba(45,85,54,0.10)', padding:'16px 20px' }}>
-                      <div className="grid gap-6" style={{ gridTemplateColumns:'1fr 1fr' }}>
+                      <div className="grid gap-5" style={{ gridTemplateColumns:'1fr 1fr' }}>
                         <div>
                           <div className="section-label mb-3">Ingredients</div>
                           <ul style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -1109,8 +1163,8 @@ export default function Home() {
 
             {/* Loading state */}
             {isLoading && (
-              <div className="glass-card p-6 fade-up">
-                <div className="flex items-center gap-4">
+              <div className="glass-card p-5 fade-up">
+                <div className="flex items-center gap-3">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
                     style={{ background:'linear-gradient(135deg,#2d5536,#4a8856)' }}>
                     <Loader2 className="h-6 w-6 text-white spin" />
@@ -1130,7 +1184,7 @@ export default function Home() {
 
       {/* ── Saved Meals Modal ── */}
       {isSavedMealsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6"
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-5"
           style={{ background:'rgba(26,46,31,0.60)', backdropFilter:'blur(12px)' }}>
           <div className="glass-card fade-up w-full max-w-2xl max-h-[85vh] overflow-y-auto p-8">
             <div className="flex items-center justify-between mb-6">
@@ -1153,7 +1207,7 @@ export default function Home() {
               <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
                 {savedMeals.map((meal: any, idx: number) => (
                   <div key={idx} className="meal-card">
-                    <div className="flex gap-4 p-4 items-center">
+                    <div className="flex gap-3 p-4 items-center">
                       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl text-3xl"
                         style={{ background:'linear-gradient(135deg,rgba(45,85,54,0.12),rgba(90,168,110,0.18))' }}>
                         {MEAL_FOOD_EMOJIS[meal.meal_type?.toLowerCase()] || '🍴'}
@@ -1183,6 +1237,81 @@ export default function Home() {
           </div>
         </div>
       )}
+      {/* ── Custom Food Modal ── */}
+      {showCustomFoodModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(26,46,31,0.55)', backdropFilter: 'blur(10px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowCustomFoodModal(false); }}>
+          <div className="glass-card fade-up w-full max-w-md p-7">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="section-label mb-0.5">Quick Add</div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>Log Custom Food</h2>
+              </div>
+              <button onClick={() => setShowCustomFoodModal(false)}
+                style={{ background: 'rgba(239,68,68,0.10)', border: 'none', borderRadius: 999, padding: '8px', cursor: 'pointer', color: '#991b1b' }}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <div className="section-label mb-2">Describe what you ate</div>
+              <div className="flex gap-2">
+                <input className="field flex-1" placeholder="e.g. 3 rice cakes with 15g honey" value={customFoodQuery}
+                  onChange={e => setCustomFoodQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleEstimateFood()} />
+                <button onClick={handleEstimateFood} disabled={isEstimating || !customFoodQuery.trim()}
+                  className="pill-btn pill-btn-green" style={{ padding: '9px 16px', flexShrink: 0 }}>
+                  {isEstimating ? <Loader2 className="h-4 w-4 spin" /> : <Sparkles className="h-4 w-4" />}
+                  {isEstimating ? '' : 'Estimate'}
+                </button>
+              </div>
+              {isEstimating && <p className="text-xs mt-1" style={{ color: 'var(--sage)' }}>AI is estimating nutrition…</p>}
+            </div>
+
+            <div className="mb-4">
+              <div className="section-label mb-2">Food Details</div>
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Food Name</label>
+                    <input className="field" placeholder="e.g. Rice cakes with honey" value={customFood.name}
+                      onChange={e => setCustomFood(prev => ({ ...prev, name: e.target.value }))} />
+                  </div>
+                  <div style={{ width: 110 }}>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Meal Type</label>
+                    <select className="field" value={customFood.meal_type}
+                      onChange={e => setCustomFood(prev => ({ ...prev, meal_type: e.target.value }))}>
+                      {['Breakfast','Lunch','Dinner','Snack','Custom'].map(t => <option key={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { label: 'Calories', key: 'calories', unit: 'kcal' },
+                    { label: 'Protein',  key: 'protein',  unit: 'g' },
+                    { label: 'Carbs',    key: 'carbs',    unit: 'g' },
+                    { label: 'Fat',      key: 'fat',      unit: 'g' },
+                  ].map(({ label, key, unit }) => (
+                    <div key={key}>
+                      <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>{label} <span style={{ color:'var(--sage)' }}>({unit})</span></label>
+                      <input type="number" className="field" style={{ textAlign: 'center' }}
+                        value={(customFood as any)[key] || ''}
+                        onChange={e => setCustomFood(prev => ({ ...prev, [key]: parseInt(e.target.value) || 0 }))} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button onClick={handleLogCustomFood} disabled={!customFood.name}
+              className="pill-btn pill-btn-green w-full" style={{ padding: '12px' }}>
+              <CheckCircle2 className="h-4 w-4" /> Log to Diary
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -1,4 +1,4 @@
-# 🥗 Autonomous Multimodal Nutrition & Grocery Agent
+# 🌿 Genau Meal: Autonomous Nutrition & Grocery Agent
 
 An intelligent, full-stack nutrition tracking application that leverages Large Language Models (LLMs) and Vision Models to help you reach your daily macro goals. 
 
@@ -6,12 +6,12 @@ Powered by **LangGraph**, the agent intelligently parses your pantry using compu
 
 ## ✨ Features
 
-- 📸 **Pantry Vision Parsing**: Take a photo of your fridge or pantry, and the LLaMA 3.2 Vision model will automatically extract ingredients and estimate their weights in grams.
+- 📸 **Pantry Vision Parsing**: Take a photo of your fridge or pantry, and the Vision model will automatically extract ingredients and estimate their weights in grams.
 - 🎯 **Daily Macro Tracking**: Set daily targets for Calories, Protein, Carbs, and Fat. The app intelligently keeps track of your remaining macros throughout the day.
-- 🤖 **Agentic Recipe Generation**: Using LangGraph and Groq's fast LLMs, the agent curates realistic recipes based on your cuisine preferences (e.g. Indian, Chinese, Italian) and what ingredients you currently have.
-- 🛒 **Automated REWE Grocery Checkout**: The agent tracks missing cultural spices and ingredients across your logged meals and provides a 1-click REWE export at the end of the day.
-- 📊 **Daily Diary**: An elegant, persistent sidebar layout that organizes your meals (Breakfast, Lunch, Dinner, Snacks) and tracks your daily progress in real time.
-- 💾 **Session & Recipe Management**: Safely create an account to save your profile macros. You can log meals to today's diary, save favorite recipes to your personal cookbook, and instantly regenerate new ideas if you don't like the AI's first suggestion.
+- 🥘 **Custom Food Logging**: Log custom meals instantly! Our integrated Gemini AI quickly estimates macros for anything you type (e.g. "Black coffee with 3 rice cakes") so you don't have to manually search for calories.
+- 🤖 **Agentic Recipe Generation**: Using LangGraph and fast LLMs, the agent curates realistic recipes based on your cuisine preferences (e.g. Indian, Chinese, Italian) and what ingredients you currently have.
+- 🛒 **Automated REWE Grocery Checkout**: The agent tracks missing cultural spices and ingredients across your logged meals and provides a 1-click export to the REWE online shop (`shop.rewe.de`) at the end of the day.
+- 📊 **Daily Diary**: An elegant, persistent sidebar layout that organizes your meals (Breakfast, Lunch, Dinner, Snacks, Custom) and tracks your daily progress in real time.
 - 🌐 **Modern UI/UX**: Built with React, Next.js, and Tailwind CSS, featuring a sleek, dark-themed, glassmorphism dashboard designed for responsiveness and aesthetics.
 
 ## 🏗️ Architecture
@@ -20,12 +20,12 @@ This project is divided into a robust Python backend and a modern React frontend
 
 ### Backend (Python/FastAPI)
 - **`app.py`**: The FastAPI server powering the backend, managing user authentication, logging meals, saving recipes, and exposing API routes to the frontend.
-- **`nodes.py`**: The core LLM orchestration using LangGraph. Contains the AI nodes for vision parsing (`vision_node`), recipe generation (`chef_node`), macro calculation, and grocery processing.
+- **`nodes.py`**: The core LLM orchestration using LangGraph. Contains the AI nodes for vision parsing, recipe generation, macro calculation, and grocery processing.
 - **`schemas.py`**: Pydantic data models for structured inputs/outputs (e.g., `Recipe`, `MealPlan`, `AppState`).
 - **`main.py`**: A CLI entry point to test the LangGraph workflow directly in the terminal.
 
 ### Frontend (Next.js/React)
-- **`frontend/app/page.tsx`**: The main dashboard featuring a comprehensive 3-column layout, the Daily Diary side menubar, macro trackers, and recipe displays.
+- **`frontend/app/page.tsx`**: The main dashboard featuring a comprehensive 2-column layout, the Daily Diary side menubar, macro trackers, Custom Food modal, and recipe displays.
 - **`frontend/app/hooks.ts`**: Contains the `useNutritionAgent` hook that seamlessly connects the React UI to the FastAPI backend.
 
 ## 🚀 Getting Started
@@ -33,7 +33,7 @@ This project is divided into a robust Python backend and a modern React frontend
 ### Prerequisites
 - Python 3.10+
 - Node.js (v18+)
-- A [Groq API Key](https://console.groq.com/keys) to power the LLM/Vision generation.
+- A [Groq API Key](https://console.groq.com/keys) and/or Google Gemini API Key to power the LLM/Vision generation.
 
 ### 1. Set up the Backend
 
@@ -47,6 +47,7 @@ pip install -r requirements.txt
 Set your API keys by creating a `.env` file in the root directory:
 ```bash
 GROQ_API_KEY=your_groq_api_key_here
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 Start the FastAPI server (it runs on port 8001 by default):

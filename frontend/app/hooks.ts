@@ -22,7 +22,7 @@ export function useNutritionAgent() {
     setError(null);
 
     try {
-      const response = await fetch('http://127.0.0.1:8001/generate', {
+      const response = await fetch('http://localhost:8001/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -55,7 +55,7 @@ export function useNutritionAgent() {
       const formData = new FormData();
       formData.append('upload', file);
 
-      const response = await fetch('http://127.0.0.1:8001/submit', {
+      const response = await fetch('http://localhost:8001/parse_pantry_image', {
         method: 'POST',
         body: formData,
       });
@@ -64,11 +64,11 @@ export function useNutritionAgent() {
         throw new Error(`Failed to parse image: ${response.status}`);
       }
 
-      return [
-        { id: `ing-${Date.now()}-1`, name: 'tomato', amount: 100, unit: 'g' as const },
-        { id: `ing-${Date.now()}-2`, name: 'spinach', amount: 50, unit: 'g' as const },
-        { id: `ing-${Date.now()}-3`, name: 'egg', amount: 2, unit: 'whole' as const },
-      ];
+      const ingredients = await response.json();
+      return ingredients.map((ing: any, i: number) => ({
+        ...ing,
+        id: `ing-${Date.now()}-${i}`
+      }));
     } catch (err) {
       console.error('Image parsing error:', err);
       setError(err instanceof Error ? err.message : 'Unexpected error');
@@ -82,7 +82,7 @@ export function useNutritionAgent() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8001/save_meal', {
+      const response = await fetch('http://localhost:8001/save_meal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recipe),
@@ -102,7 +102,7 @@ export function useNutritionAgent() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8001/saved_meals');
+      const response = await fetch('http://localhost:8001/saved_meals');
       if (!response.ok) throw new Error(`Failed to fetch saved meals: ${response.status}`);
       return await response.json();
     } catch (err) {
@@ -118,7 +118,7 @@ export function useNutritionAgent() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8001/login', {
+      const response = await fetch('http://localhost:8001/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -137,7 +137,7 @@ export function useNutritionAgent() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8001/register', {
+      const response = await fetch('http://localhost:8001/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -155,7 +155,7 @@ export function useNutritionAgent() {
   async function updateProfile(profile: any) {
     setIsLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:8001/update_profile', {
+      const response = await fetch('http://localhost:8001/update_profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(profile),
@@ -173,7 +173,7 @@ export function useNutritionAgent() {
   async function logDailyMeal(username: string, date: string, recipe: any, shoppingCost = 0, shoppingItems: any[] = []) {
     setIsLoading(true);
     try {
-      const response = await fetch('http://127.0.0.1:8001/log_daily_meal', {
+      const response = await fetch('http://localhost:8001/log_daily_meal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, date, recipe, shopping_cost: shoppingCost, shopping_items: shoppingItems }),
@@ -191,7 +191,7 @@ export function useNutritionAgent() {
   async function fetchWeeklySummary(username: string, weekStart: string) {
     try {
       const response = await fetch(
-        `http://127.0.0.1:8001/weekly_summary?username=${encodeURIComponent(username)}&week_start=${encodeURIComponent(weekStart)}`
+        `http://localhost:8001/weekly_summary?username=${encodeURIComponent(username)}&week_start=${encodeURIComponent(weekStart)}`
       );
       if (!response.ok) throw new Error('Failed to fetch weekly summary');
       return await response.json();
@@ -204,7 +204,7 @@ export function useNutritionAgent() {
   async function fetchDailySummary(username: string, date: string) {
     setIsLoading(true);
     try {
-      const response = await fetch(`http://127.0.0.1:8001/daily_summary?username=${encodeURIComponent(username)}&date=${encodeURIComponent(date)}`);
+      const response = await fetch(`http://localhost:8001/daily_summary?username=${encodeURIComponent(username)}&date=${encodeURIComponent(date)}`);
       if (!response.ok) throw new Error('Failed to fetch daily summary');
       return await response.json();
     } catch (err) {
@@ -228,7 +228,7 @@ export function useNutritionAgent() {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch('http://127.0.0.1:8001/ai_swap', {
+      const response = await fetch('http://localhost:8001/ai_swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -246,5 +246,23 @@ export function useNutritionAgent() {
     }
   }
 
-  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap };
+  async function estimateCustomFood(query: string) {
+    setIsLoading(true);
+    try {
+      const response = await fetch('http://localhost:8001/estimate_custom_food', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+      if (!response.ok) throw new Error('Failed to estimate custom food');
+      return await response.json();
+    } catch (err) {
+      console.error(err);
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap, estimateCustomFood };
 }

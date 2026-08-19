@@ -145,3 +145,14 @@ class LogMealRequest(BaseModel):
     recipe: Recipe
     shopping_cost: float = 0.0
     shopping_items: list[dict] = []
+
+class EstimateCustomFoodRequest(BaseModel):
+    query: str
+
+class EstimateCustomFoodResponse(BaseModel):
+    name: str
+    calories: int
+    protein: int
+    carbs: int
+    fat: int
+    meal_type: str | None = None

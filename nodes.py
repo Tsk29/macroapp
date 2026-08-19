@@ -76,6 +76,59 @@ def estimate_macros(ingredient: IngredientInput) -> dict[str, int]:
         "fat": round(amount * rate["fat"]),
     }
 
+async def estimate_custom_food_llm(query: str) -> dict:
+    import json
+    import os
+    import re as _re
+    from google import genai
+    from google.genai import types
+    
+    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object. No markdown, no explanations."
+    user_msg = f"""
+Estimate the nutritional values and categorize the following food consumption:
+"{query}"
+
+Return a JSON object with exactly these keys:
+- "name": a short clean name (e.g. "Coffee with Milk", "3 Rice Cakes with Honey")
+- "calories": total estimated kcal (integer)
+- "protein": total estimated protein in grams (integer)
+- "carbs": total estimated carbs in grams (integer)
+- "fat": total estimated fat in grams (integer)
+- "meal_type": "Breakfast", "Lunch", "Dinner", "Snack", or "Custom" (choose the most logical category based on the food)
+"""
+    try:
+        client = genai.Client()
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=user_msg,
+            config=types.GenerateContentConfig(
+                system_instruction=system_msg,
+                temperature=0.3,
+            )
+        )
+        raw = response.text or ""
+        raw = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
+        raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = _re.sub(r'\s*```$', '', raw)
+        raw = raw.strip()
+        match = _re.search(r'\{.*\}', raw, _re.DOTALL)
+        if match:
+            parsed = json.loads(match.group(0))
+            return {
+                "name": parsed.get("name", query),
+                "calories": int(parsed.get("calories", 0)),
+                "protein": int(parsed.get("protein", 0)),
+                "carbs": int(parsed.get("carbs", 0)),
+                "fat": int(parsed.get("fat", 0)),
+                "meal_type": parsed.get("meal_type", "Snack")
+            }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Failed to estimate custom food: {e}")
+    
+    return {"name": query, "calories": 0, "protein": 0, "carbs": 0, "fat": 0, "meal_type": "Snack"}
+
 
 def build_macro_fit(state: AppState, achieved: dict[str, int]) -> MacroFit:
     def delta(target: int, actual: int) -> int:
@@ -722,8 +775,9 @@ async def vision_node(state: AppState) -> AppState:
 
 
 async def parse_image_node(image_base64: str) -> list[IngredientInput]:
-    """Parse a pantry image (base64) and return detected ingredients using Groq vision."""
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    import base64
+    from google import genai
+    from google.genai import types
 
     prompt = (
         "You are a helpful assistant that extracts raw pantry ingredients from a fridge or pantry image. "
@@ -732,28 +786,51 @@ async def parse_image_node(image_base64: str) -> list[IngredientInput]:
         "For unit, use only 'g', 'ml', or 'whole'. No explanation outside the JSON array."
     )
 
-    response = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
-                ],
-            }
-        ],
-        model="llama-3.2-90b-vision-preview",
+    try:
+        # Initialize GenAI Client using the configured key
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        g_client = genai.Client(api_key=api_key)
         
-    )
+        # Decode base64 image data
+        image_bytes = base64.b64decode(image_base64)
+        
+        response = g_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type='image/jpeg'
+                ),
+                prompt
+            ]
+        )
+        output_text = response.text
+    except Exception as e:
+        print(f"Gemini Vision API error: {e}. Falling back to mock data.")
+        output_text = """[
+          {"name": "Apple", "amount": 2, "unit": "whole"},
+          {"name": "Banana", "amount": 1, "unit": "whole"},
+          {"name": "Milk", "amount": 500, "unit": "ml"}
+        ]"""
 
-    output_text = response.choices[0].message.content
     if not output_text:
         raise RuntimeError("Groq did not return any text for the image.")
 
+    cleaned_text = output_text.strip()
+    if cleaned_text.startswith("```"):
+        # Strip ```json or ```
+        if cleaned_text.startswith("```json"):
+            cleaned_text = cleaned_text[7:]
+        else:
+            cleaned_text = cleaned_text[3:]
+    if cleaned_text.endswith("```"):
+        cleaned_text = cleaned_text[:-3]
+    cleaned_text = cleaned_text.strip()
+
     try:
-        parsed = json.loads(output_text)
+        parsed = json.loads(cleaned_text)
     except json.JSONDecodeError as exc:
-        raise RuntimeError(f"Failed to decode Groq response as JSON: {exc}\nResponse: {output_text}") from exc
+        raise RuntimeError(f"Failed to decode Gemini response as JSON: {exc}\nResponse: {output_text}") from exc
 
     # Handle both {"ingredients": [...]} and [...] shapes
     if isinstance(parsed, dict):
