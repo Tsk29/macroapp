@@ -486,38 +486,25 @@ These items are in the user's pantry and need to be used before they expire. If 
         f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings. Elevate this dish to a fine dining standard."
     )
 
-    models_to_try = ["llama3-70b-8192", "mixtral-8x7b-32768", "llama3-8b-8192"]
-
-    for model in models_to_try:
-        try:
-            response = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_msg},
-                ],
-                model=model,
-                max_completion_tokens=4000,
-                temperature=0.7,
-            )
-            raw = response.choices[0].message.content or ""
-            raw = raw.strip()
-            # Strip <think>...</think> tags from reasoning models (qwen)
-            raw = _re.sub(r'<think>.*?</think>', '', raw, flags=_re.DOTALL).strip()
-            # Strip markdown code fences if present
-            raw = _re.sub(r'^```(?:json)?\s*', '', raw)
-            raw = _re.sub(r'\s*```$', '', raw)
-            raw = raw.strip()
-            # Extract first JSON object
-            match = _re.search(r'\{.*\}', raw, _re.DOTALL)
-            if match:
-                parsed = json.loads(match.group(0))
-                if "instructions" in parsed and len(parsed["instructions"]) >= 1:
-                    print(f"[generate_recipe_llm] success with {model}, {len(parsed['instructions'])} steps")
-                    return parsed
-        except Exception as e:
-            _tb.print_exc()
-            print(f"[generate_recipe_llm] model {model} failed: {e}")
-            continue
+    from google import genai
+    from google.genai import types
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+    g_client = genai.Client(api_key=api_key)
+    
+    try:
+        response = g_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[system_msg + "\n\n" + user_msg],
+            config=types.GenerateContentConfig(temperature=0.7, response_mime_type="application/json")
+        )
+        raw = response.text.strip()
+        parsed = json.loads(raw)
+        if "instructions" in parsed and len(parsed["instructions"]) >= 1:
+            print(f"[generate_recipe_llm] success with gemini-3.6-flash, {len(parsed['instructions'])} steps")
+            return parsed
+    except Exception as e:
+        _tb.print_exc()
+        print(f"[generate_recipe_llm] gemini-3.6-flash failed: {e}")
 
     # All models failed — use high-quality rule-based fallback
     print("[generate_recipe_llm] all models failed, using create_realistic_instructions")
@@ -1167,14 +1154,16 @@ async def scraper_node(state: AppState) -> AppState:
             }
         ]
 
-        final_json_response = client.chat.completions.create(
-            model="llama3-70b-8192",
-            max_completion_tokens=4000,
-            messages=messages,
-            response_format={"type": "json_object"}
+        from google import genai
+        from google.genai import types
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        g_client = genai.Client(api_key=api_key)
+        response = g_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[messages[0]["content"] + "\n\n" + messages[1]["content"]],
+            config=types.GenerateContentConfig(temperature=0.1, response_mime_type="application/json")
         )
-        
-        raw_content = final_json_response.choices[0].message.content
+        raw_content = response.text.strip()
         parsed = json.loads(raw_content)
         items_list = parsed.get("items", [])
         

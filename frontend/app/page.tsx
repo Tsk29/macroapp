@@ -496,7 +496,7 @@ export default function Home() {
     if (pantryItems.length === 0) return;
     const payload = {
       user_prompt: '',
-      mode: mode,
+      mode: 'zero_waste',
       meal_type: mealType,
       cuisine_preference: selectedCuisines,
       target_calories: targetCalories,
