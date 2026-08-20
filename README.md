@@ -7,12 +7,13 @@ Powered by **LangGraph**, the agent intelligently parses your pantry using compu
 ## ✨ Features
 
 - 📸 **Pantry Vision Parsing**: Take a photo of your fridge or pantry, and the Vision model will automatically extract ingredients and estimate their weights in grams.
+- ♻️ **Zero Waste Mode (Pantry Intelligence)**: Log ingredients from your pantry or leftovers, and the AI will generate creative, authentic recipes that prioritize using them up to minimize food waste.
 - 🎯 **Daily Macro Tracking**: Set daily targets for Calories, Protein, Carbs, and Fat. The app intelligently keeps track of your remaining macros throughout the day.
 - 🥘 **Custom Food Logging**: Log custom meals instantly! Our integrated Gemini AI quickly estimates macros for anything you type (e.g. "Black coffee with 3 rice cakes") so you don't have to manually search for calories.
 - 🤖 **Agentic Recipe Generation**: Using LangGraph and fast LLMs, the agent curates realistic recipes based on your cuisine preferences (e.g. Indian, Chinese, Italian) and what ingredients you currently have.
 - 🛒 **Automated REWE Grocery Checkout**: The agent tracks missing cultural spices and ingredients across your logged meals and provides a 1-click export to the REWE online shop (`shop.rewe.de`) at the end of the day.
-- 📊 **Daily Diary**: An elegant, persistent sidebar layout that organizes your meals (Breakfast, Lunch, Dinner, Snacks, Custom) and tracks your daily progress in real time.
-- 🌐 **Modern UI/UX**: Built with React, Next.js, and Tailwind CSS, featuring a sleek, dark-themed, glassmorphism dashboard designed for responsiveness and aesthetics.
+- 📊 **Sidebar Dashboard**: A sleek, persistent left-sidebar layout (on desktop) that gives you quick access to the Recipe Builder, your Daily Diary, and Weekly Compliance progress charts.
+- 🌐 **Modern UI/UX**: Built with React, Next.js, and Tailwind CSS, featuring a beautiful dark-mode-ready, glassmorphism dashboard designed for responsiveness and premium aesthetics.
 
 ## 🏗️ Architecture
 
