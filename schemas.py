@@ -76,7 +76,7 @@ class AppState(BaseModel):
 
     user_prompt: str | None = None
     cuisine_preference: list[str] = Field(default_factory=list)
-    mode: Literal["single_meal", "full_day"] = "single_meal"
+    mode: Literal["single_meal", "full_day", "zero_waste"] = "single_meal"
     meal_type: str | None = "Lunch"
     target_calories: int = 0
     target_protein: int = 0

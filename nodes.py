@@ -437,7 +437,7 @@ async def generate_recipe_llm(
     if not ingredients:
         return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Prep ingredients", "Cook", "Serve"]}
 
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    
     ingredient_list = ", ".join(f"{i.amount}{i.unit} {i.name}" for i in ingredients if i.name.strip())
 
     macro_block = ""
@@ -1120,7 +1120,7 @@ async def scraper_node(state: AppState) -> AppState:
     deduped_missing = sorted(list(set(i.lower().strip() for i in state.missing_ingredients)))
     state.missing_ingredients = deduped_missing
 
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    
     
     scraper_items: list[ScraperItem] = []
     

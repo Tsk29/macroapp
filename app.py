@@ -40,7 +40,7 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 class SubmitPayload(BaseModel):
     user_prompt: str | None = None
-    mode: Literal["single_meal", "full_day"] = "single_meal"
+    mode: Literal["single_meal", "full_day", "zero_waste"] = "single_meal"
     meal_type: str | None = "Lunch"
     cuisine_preference: list[str] = Field(default_factory=list)
     target_calories: int = 0
