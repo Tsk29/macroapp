@@ -683,51 +683,55 @@ export default function Home() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div className={isDarkMode ? 'dark' : ''} style={{ minHeight: '100vh', background: 'var(--bg-gradient)', transition: 'background 0.3s ease' }}>
-
-      {/* ── Header ── */}
-      <header className="glass-card mx-auto mt-4 flex max-w-7xl items-center justify-between px-6 py-3"
-        style={{ borderRadius: '20px', margin: '16px auto', maxWidth: '1380px' }}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl"
-            style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
-            <Leaf className="h-5 w-5 text-white" strokeWidth={2.5} />
+    <div className={isDarkMode ? 'dark' : ''}>
+      <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-gradient)', transition: 'background 0.3s ease' }}>
+        
+        {/* ── Sidebar (Desktop) ── */}
+        <aside className="w-64 flex-shrink-0 relative hidden md:flex flex-col border-r" style={{ background: 'rgba(255, 255, 255, 0.4)', borderColor: 'rgba(45,85,54,0.1)' }}>
+          <div className="p-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
+              <Leaf className="h-5 w-5 text-white" strokeWidth={2.5} />
+            </div>
+            <div>
+              <div className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>Genau Meal</div>
+              <div className="text-xs" style={{ color: 'var(--sage)' }}>Hi, {userProfile.username} 👋</div>
+            </div>
           </div>
-          <div>
-            <div className="text-base font-bold" style={{ color: 'var(--text-main)' }}>Genau Meal</div>
-            <div className="text-xs" style={{ color: 'var(--sage)' }}>Hi, {userProfile.username} 👋</div>
-          </div>
-        </div>
+          
+          <nav className="px-4 py-2 space-y-2 mt-2 flex-1">
+            {([['build','🍳','Build Recipe'], ['diary','📓','My Diary'], ['stats','📊','Progress']] as const).map(([tab, emoji, label]) => (
+              <button key={tab} onClick={() => setActiveTab(tab)} className="w-full text-left px-4 py-3 text-sm font-semibold transition-all"
+                style={{ background: activeTab === tab ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'transparent', color: activeTab === tab ? '#fff' : 'var(--text-sub)', borderRadius: '12px' }}>
+                <span className="mr-3">{emoji}</span> {label}
+              </button>
+            ))}
+          </nav>
 
-        <nav className="hidden md:flex items-center gap-1">
-          {([['build','🍳','Build'], ['diary','📓','My Diary'], ['stats','📊','Progress']] as const).map(([tab, emoji, label]) => (
-            <button key={tab} onClick={() => setActiveTab(tab)}
-              className="pill-btn px-4 py-2 text-sm"
-              style={{
-                background: activeTab === tab ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'transparent',
-                color: activeTab === tab ? '#fff' : 'var(--text-sub)',
-                borderRadius: '12px',
-                border: 'none',
-              }}>
-              {emoji} {label}
+          <div className="p-4 space-y-2 mt-auto mb-4 border-t" style={{ borderColor: 'rgba(45,85,54,0.1)' }}>
+            <button onClick={() => setIsDarkMode(d => !d)} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--text-sub)' }}>
+              <span className="mr-3">{isDarkMode ? '🌙' : '☀️'}</span> {isDarkMode ? 'Dark Mode' : 'Light Mode'}
             </button>
-          ))}
-        </nav>
+            <button onClick={async () => { setIsSavedMealsOpen(true); const m = await fetchSavedMeals(); setSavedMeals(m); }} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--text-sub)' }}>
+              <span className="mr-3"><BookMarked className="inline h-4 w-4" /></span> Saved Meals
+            </button>
+            <button onClick={handleLogout} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl mt-2 hover:bg-red-50/50" style={{ color: '#991b1b', background: 'rgba(239,68,68,0.1)' }}>
+              <span className="mr-3"><LogOut className="inline h-4 w-4" /></span> Sign Out
+            </button>
+          </div>
+        </aside>
 
-        <div className="flex items-center gap-3">
-          <button onClick={() => setIsDarkMode(d => !d)} className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 12px' }}>
-            {isDarkMode ? '🌙' : '☀️'}
-          </button>
-          <button onClick={async () => { setIsSavedMealsOpen(true); const m = await fetchSavedMeals(); setSavedMeals(m); }}
-            className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 16px' }}>
-            <BookMarked className="h-3.5 w-3.5" /> Saved
-          </button>
-          <button onClick={handleLogout} className="pill-btn text-sm"
-            style={{ background: 'rgba(239,68,68,0.1)', color: '#991b1b', border: 'none', padding: '8px 16px', borderRadius: '12px' }}>
-            <LogOut className="h-3.5 w-3.5" /> Sign Out
-          </button>
-        </div>
-      </header>
+        {/* ── Main Scrollable Area ── */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Mobile Header */}
+          <header className="md:hidden glass-card mx-auto mt-4 flex items-center justify-between px-6 py-3" style={{ borderRadius: '20px', margin: '16px 16px', maxWidth: '100%' }}>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: 'linear-gradient(135deg, #2d5536, #4a8856)' }}>
+                <Leaf className="h-5 w-5 text-white" strokeWidth={2.5} />
+              </div>
+              <div className="text-base font-bold" style={{ color: 'var(--text-main)' }}>Genau Meal</div>
+            </div>
+            <button onClick={() => setIsDarkMode(d => !d)} className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 12px' }}>{isDarkMode ? '🌙' : '☀️'}</button>
+          </header>
 
       {/* ── Weekly Calendar Strip ── */}
       <div style={{ maxWidth: '1380px', margin: '0 auto', padding: '0 16px' }}>
@@ -757,11 +761,12 @@ export default function Home() {
       </div>
 
       {/* ── Main Grid ── */}
-      <main style={{ maxWidth: '1380px', margin: '16px auto 32px', padding: '0 16px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '12px' }}>
+      <main style={{ maxWidth: '1000px', margin: '16px auto 32px', padding: '0 16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-          {/* ══ LEFT PANEL ══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {/* ══ LEFT PANEL (Diary & Dashboard) ══ */}
+          {activeTab === 'diary' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
             {/* Macro overview rings */}
             <div className="glass-card p-4">
@@ -952,12 +957,13 @@ export default function Home() {
             )}
 
           </div>
+          )}
 
           {/* ══ RIGHT PANEL ══ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
             {/* Weekly Compliance Bar Chart */}
-            {weeklyData.length > 0 && (
+            {activeTab === 'stats' && weeklyData.length > 0 && (
               <div className="glass-card p-4 fade-up">
                 <div className="flex items-center justify-between mb-4">
                   <div>
@@ -993,6 +999,8 @@ export default function Home() {
             )}
 
             {/* Pantry Intelligence */}
+            {activeTab === 'build' && (
+              <>
             <div className="glass-card p-5 mb-4 fade-up">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -1059,7 +1067,7 @@ export default function Home() {
             {/* Build tab */}
             <div className="glass-card p-5">
               {/* Tabs (mobile) */}
-              <div className="flex md:hidden gap-2 mb-6">
+              <div className="hidden gap-2 mb-6">
                 {([['build','🍳','Build'], ['diary','📓','Diary'], ['stats','📊','Stats']] as const).map(([tab,e,l]) => (
                   <button key={tab} onClick={() => setActiveTab(tab)}
                     className="pill-btn flex-1 text-sm"
@@ -1415,9 +1423,13 @@ export default function Home() {
                 <div className="shimmer mt-2 h-3 rounded-full" style={{ width:'70%' }} />
               </div>
             )}
+              </>
+            )}
           </div>
         </div>
       </main>
+      </div>
+      </div>
 
       {/* ── Saved Meals Modal ── */}
       {isSavedMealsOpen && (
