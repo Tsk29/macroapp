@@ -503,7 +503,7 @@ export default function Home() {
       target_protein: targetProtein,
       target_carbs: targetCarbs,
       target_fat: targetFat,
-      ingredients: [],
+      ingredients: pantryItems.map(item => ({ id: Math.random().toString(), name: item, amount: 100, unit: 'g' })),
       pantry_items: pantryItems
     };
     await generateRecipe(payload);
@@ -698,16 +698,39 @@ export default function Home() {
             </div>
           </div>
           
-          <nav className="px-4 py-2 space-y-2 mt-2 flex-1">
+          <nav className="px-4 py-2 space-y-2 mt-2">
             {([['build','🍳','Build Recipe'], ['diary','📓','My Diary'], ['stats','📊','Progress']] as const).map(([tab, emoji, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)} className="w-full text-left px-4 py-3 text-sm font-semibold transition-all"
                 style={{ background: activeTab === tab ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'transparent', color: activeTab === tab ? '#fff' : 'var(--text-sub)', borderRadius: '12px' }}>
                 <span className="mr-3">{emoji}</span> {label}
               </button>
             ))}
+            
+            <div className="pt-4 mt-4 border-t" style={{ borderColor: 'rgba(45,85,54,0.1)' }}>
+              <div className="px-4 mb-2 text-xs font-bold uppercase tracking-wider" style={{ color: 'var(--sage)' }}>Macro Targets</div>
+              <div className="grid grid-cols-2 gap-2 px-2">
+                {[
+                  { label:'Kcal', val:targetCalories, set:setTargetCalories },
+                  { label:'Pro',  val:targetProtein, set:setTargetProtein },
+                  { label:'Carb', val:targetCarbs,   set:setTargetCarbs },
+                  { label:'Fat',  val:targetFat,     set:setTargetFat },
+                ].map(m => (
+                  <div key={m.label} className="flex flex-col">
+                    <span className="text-[10px] font-medium ml-1" style={{ color:'var(--text-sub)' }}>{m.label}</span>
+                    <input type="number" className="field" value={m.val} onChange={e => m.set(Number(e.target.value))} style={{ padding: '4px 8px', fontSize: '12px' }} />
+                  </div>
+                ))}
+              </div>
+              <button onClick={handleUpdateProfile} disabled={isLoading} className="w-full mt-3 text-xs font-semibold py-2 rounded-xl transition-all" style={{ background: 'rgba(45,85,54,0.1)', color: 'var(--green-600)' }}>
+                {isLoading ? 'Saving...' : 'Save Targets'}
+              </button>
+            </div>
           </nav>
 
           <div className="p-4 space-y-2 mt-auto mb-4 border-t" style={{ borderColor: 'rgba(45,85,54,0.1)' }}>
+            <button onClick={() => setShowCustomFoodModal(true)} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--green-600)', background: 'rgba(45,85,54,0.1)' }}>
+              <span className="mr-3">➕</span> Log Custom Food
+            </button>
             <button onClick={() => setIsDarkMode(d => !d)} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--text-sub)' }}>
               <span className="mr-3">{isDarkMode ? '🌙' : '☀️'}</span> {isDarkMode ? 'Dark Mode' : 'Light Mode'}
             </button>
@@ -1194,22 +1217,6 @@ export default function Home() {
                       {isLoading ? 'Saving…' : 'Save Profile'}
                     </button>
                   </div>
-                </div>
-                <div className="grid gap-3" style={{ gridTemplateColumns:'1fr 1fr' }}>
-                  {[
-                    { label:'Calories', val:targetCalories, set:setTargetCalories, icon:<Flame className="h-3.5 w-3.5" /> },
-                    { label:'Protein g', val:targetProtein, set:setTargetProtein, icon:<Dumbbell className="h-3.5 w-3.5" /> },
-                    { label:'Carbs g',   val:targetCarbs,   set:setTargetCarbs,   icon:<Wheat className="h-3.5 w-3.5" /> },
-                    { label:'Fat g',     val:targetFat,     set:setTargetFat,     icon:<Droplets className="h-3.5 w-3.5" /> },
-                  ].map(m => (
-                    <label key={m.label} className="flex flex-col gap-1">
-                      <span className="flex items-center gap-1 text-xs font-medium" style={{ color:'var(--text-sub)' }}>
-                        {m.icon} {m.label}
-                      </span>
-                      <input type="number" className="field" value={m.val}
-                        onChange={e => m.set(Number(e.target.value))} />
-                    </label>
-                  ))}
                 </div>
               </div>
 
