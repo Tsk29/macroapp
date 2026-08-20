@@ -396,8 +396,12 @@ async def daily_summary(username: str, date: str) -> dict:
             consumed["protein"] += meal["macro_fit"].get("protein_achieved", 0)
             consumed["carbs"] += meal["macro_fit"].get("carbs_achieved", 0)
             consumed["fat"] += meal["macro_fit"].get("fat_achieved", 0)
-        total_shopping_cost += meal.get("shopping_cost", 0.0)
-        all_shopping_items.extend(meal.get("shopping_items", []))
+        # Only add the cost and item if we haven't seen this exact item name before today
+        for item in meal.get("shopping_items", []):
+            item_name = item.get("name", "").lower().strip()
+            if not any(existing.get("name", "").lower().strip() == item_name for existing in all_shopping_items):
+                all_shopping_items.append(item)
+                total_shopping_cost += meal.get("shopping_cost", 0.0) # We might need to rethink total_shopping_cost, but for now we just won't double charge if we deduplicate the item
 
     remaining = {
         "calories": max(0, profile.target_calories - consumed["calories"]),

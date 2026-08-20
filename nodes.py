@@ -465,10 +465,16 @@ These items are in the user's pantry and need to be used before they expire. If 
     if raw_research:
         research_block = f"\n\nHere is research on authentic recipe styles matching your main ingredient and cuisine:\n{raw_research}\nUse this research to generate a creative, authentic recipe instead of a generic one."
 
-    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object in ENGLISH. All content, including title and instructions, MUST be in English, regardless of cuisine. No markdown, no explanations."
+    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object in ENGLISH. All content, including title and instructions, MUST be in English, regardless of cuisine. No markdown, no explanations. You are a World-Class Michelin-star executive chef."
+    
+    strict_input_block = ""
+    if ingredients:
+        strict_input_block = "\n\nSTRICT INGREDIENT CONSTRAINT: The protein and carb sources provided in the input list are CONSTANT. You absolutely MUST use them. DO NOT swap, omit, or change the primary protein or carb sources under any circumstances.\n"
+    
     user_msg = (
-        f"Create an authentic {cuisine} {meal_type} recipe based on these ingredients: {ingredient_list}."
-        f"CRITICAL: You MUST include and use ALL of the provided ingredients (especially any grains/carbs like rice, and proteins like chicken) in the instructions unless the AI SWAP REQUEST instructs otherwise.\n"
+        f"Create an authentic, WORLD-CLASS {cuisine} {meal_type} recipe based on these ingredients: {ingredient_list}."
+        f"CRITICAL: You MUST include and use ALL of the provided ingredients (especially any grains/carbs like rice, and proteins like chicken) in the instructions unless the AI SWAP REQUEST instructs otherwise."
+        f"{strict_input_block}\n"
         f"CRITICAL: The entire JSON response (title, instructions, ingredients list) MUST be written in English. Do NOT output in Italian, Chinese, or any other language.\n"
         f"{macro_block}{swap_block}{zero_waste_block}{research_block}\n\n"
         "Respond with a JSON object containing exactly these keys:\n"
@@ -477,7 +483,7 @@ These items are in the user's pantry and need to be used before they expire. If 
         '- "instructions": array of at least 5 highly detailed, step-by-step cooking instructions. Write like a Michelin-star chef giving explicit directions with temperatures, timings, and techniques. Do NOT write short or lazy instructions.\n'
         '- "ingredients": array of objects with fields "name" (string), "amount" (integer), "unit" (string). This MUST be the finalized, complete list of ingredients for this dish (incorporating any swaps/replacements and extra flavor additions).\n'
         f'- "additional_ingredients": array of extra ingredients YOU MUST add to achieve an authentic {cuisine} flavor profile. Include essential cultural spices, sauces, or herbs (e.g., cumin, soy sauce, garam masala, star anise, ginger) that are not already in the provided ingredients list.\n\n'
-        f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings."
+        f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings. Elevate this dish to a fine dining standard."
     )
 
     models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
@@ -684,7 +690,7 @@ async def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]
         target_protein=state.target_protein,
         target_carbs=state.target_carbs,
         target_fat=state.target_fat,
-        is_zero_waste=len(state.ingredients) > 0 and len(state.pantry_items) > 0 and set(i.name.strip().lower() for i in state.ingredients).issubset(set(p.strip().lower() for p in state.pantry_items))
+        is_zero_waste=True if (state.mode == "zero_waste" or (len(state.ingredients) > 0 and len(state.pantry_items) > 0 and set(i.name.strip().lower() for i in state.ingredients).issubset(set(p.strip().lower() for p in state.pantry_items)))) else False
     )
     recipe.title = recipe_dict.get("title", recipe.title)
     recipe.meal_structure = recipe_dict.get("meal_structure")
@@ -1123,6 +1129,10 @@ async def scraper_node(state: AppState) -> AppState:
     if not state.missing_ingredients:
         return state
 
+    # Deduplicate missing ingredients
+    deduped_missing = sorted(list(set(i.lower().strip() for i in state.missing_ingredients)))
+    state.missing_ingredients = deduped_missing
+
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
     
     scraper_items: list[ScraperItem] = []
@@ -1158,7 +1168,7 @@ async def scraper_node(state: AppState) -> AppState:
         ]
 
         final_json_response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="llama3-70b-8192",
             max_completion_tokens=4000,
             messages=messages,
             response_format={"type": "json_object"}
