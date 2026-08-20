@@ -728,9 +728,6 @@ export default function Home() {
           </nav>
 
           <div className="p-4 space-y-2 mt-auto mb-4 border-t" style={{ borderColor: 'rgba(45,85,54,0.1)' }}>
-            <button onClick={() => setShowCustomFoodModal(true)} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--green-600)', background: 'rgba(45,85,54,0.1)' }}>
-              <span className="mr-3">➕</span> Log Custom Food
-            </button>
             <button onClick={() => setIsDarkMode(d => !d)} className="w-full text-left px-4 py-2 text-sm font-semibold rounded-xl hover:bg-gray-100/50" style={{ color: 'var(--text-sub)' }}>
               <span className="mr-3">{isDarkMode ? '🌙' : '☀️'}</span> {isDarkMode ? 'Dark Mode' : 'Light Mode'}
             </button>
@@ -1141,16 +1138,27 @@ export default function Home() {
 
               {/* Meal type (single only) */}
               {mode === 'single_meal' && (
-                <div className="mb-4">
+                <div className="mb-6">
                   <div className="section-label mb-2">Meal Type</div>
-                  <div className="flex gap-2 flex-wrap">
+                  <div className="flex gap-2 flex-wrap mb-4">
                     {['Breakfast','Lunch','Dinner','Snack','Custom'].map(t => (
                       <button key={t} onClick={() => setMealType(t)}
-                        className="pill-btn text-sm"
+                        className="pill-btn text-sm transition-all"
                         style={{ padding:'8px 16px', background: mealType===t ? 'linear-gradient(135deg,#2d5536,#4a8856)' : 'rgba(255,255,255,0.6)', color: mealType===t ? '#fff' : 'var(--text-sub)', border: mealType===t ? 'none' : '1.5px solid rgba(45,85,54,0.18)', borderRadius:12 }}>
                         {MEAL_EMOJIS[t.toLowerCase()]} {t}
                       </button>
                     ))}
+                  </div>
+                  
+                  {/* Log Custom Food Card */}
+                  <div className="flex items-center justify-between p-4 rounded-2xl" style={{ background: 'linear-gradient(to right, rgba(45,85,54,0.05), rgba(45,85,54,0.02))', border: '1px solid rgba(45,85,54,0.1)' }}>
+                    <div>
+                      <div className="text-sm font-bold" style={{ color: 'var(--green-800)' }}>Did you eat something else?</div>
+                      <div className="text-xs mt-0.5" style={{ color: 'var(--text-sub)' }}>Log standalone foods or snacks via voice or barcode.</div>
+                    </div>
+                    <button onClick={() => setShowCustomFoodModal(true)} className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl transition-all" style={{ background: 'var(--green-600)', color: '#fff', boxShadow: '0 4px 12px rgba(45,85,54,0.2)' }}>
+                      <span style={{ fontSize: '14px' }}>➕</span> Quick Log
+                    </button>
                   </div>
                 </div>
               )}
