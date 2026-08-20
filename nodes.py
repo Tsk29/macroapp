@@ -486,7 +486,7 @@ These items are in the user's pantry and need to be used before they expire. If 
         f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings. Elevate this dish to a fine dining standard."
     )
 
-    models_to_try = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+    models_to_try = ["llama3-70b-8192", "mixtral-8x7b-32768", "llama3-8b-8192"]
 
     for model in models_to_try:
         try:
