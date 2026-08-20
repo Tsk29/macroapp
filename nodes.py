@@ -1203,3 +1203,54 @@ async def scraper_node(state: AppState) -> AppState:
     state.scraper_report = f"Found {len(scraper_items)} missing ingredients using Rewe API & Web Search."
 
     return state
+
+
+import requests
+
+async def process_barcode_llm(barcode: str) -> dict:
+    url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+    try:
+        headers = {"User-Agent": "GenauNutritionAgent/1.0 (tharunskumar@example.com)"}
+        resp = requests.get(url, headers=headers)
+        data = resp.json()
+        if data.get("status") != 1 or "product" not in data:
+            return {"error": "Product not found"}
+            
+        product = data["product"]
+        # Extract meaningful subset of data to avoid exceeding context limits
+        subset = {
+            "product_name": product.get("product_name"),
+            "ingredients_text": product.get("ingredients_text"),
+            "nutriments": product.get("nutriments", {})
+        }
+        
+        prompt = (
+            "You are a nutritional data extraction API. "
+            "Analyze the following raw Open Food Facts product JSON data and extract the macronutrients PER 100g. "
+            "Return ONLY a JSON object with the following fields exactly:\n"
+            "- name (string)\n"
+            "- calories (number)\n"
+            "- protein (number)\n"
+            "- carbs (number)\n"
+            "- fat (number)\n\n"
+            "If the data is missing, make your best estimation based on the ingredients or product name.\n"
+            f"Raw data: {json.dumps(subset)}"
+        )
+        
+        from google import genai
+        from google.genai import types
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+        g_client = genai.Client(api_key=api_key)
+        
+        res = g_client.models.generate_content(
+            model='gemini-3.6-flash',
+            contents=[prompt],
+            config=types.GenerateContentConfig(temperature=0.1, response_mime_type="application/json")
+        )
+        
+        raw_content = res.text.strip()
+        parsed = json.loads(raw_content)
+        return parsed
+    except Exception as e:
+        print(f"Barcode processing failed: {e}")
+        return {"error": str(e)}

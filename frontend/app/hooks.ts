@@ -9,7 +9,7 @@ export function useNutritionAgent() {
 
   async function generateRecipe(payload: {
     user_prompt: string;
-    mode: 'single_meal' | 'full_day';
+    mode: 'single_meal' | 'full_day' | 'zero_waste';
     meal_type: string;
     cuisine_preference: string[];
     target_calories: number;

@@ -298,6 +298,20 @@ async def fetch_saved_meals() -> list[dict]:
 USERS_FILE = BASE_DIR / "users.json"
 LOGS_FILE = BASE_DIR / "daily_logs.json"
 
+
+from pydantic import BaseModel
+
+class BarcodeRequest(BaseModel):
+    barcode: str
+
+@app.post("/scan_barcode")
+async def scan_barcode(req: BarcodeRequest):
+    from nodes import process_barcode_llm
+    res = await process_barcode_llm(req.barcode)
+    if "error" in res:
+        raise HTTPException(status_code=400, detail=res["error"])
+    return res
+
 def get_users() -> dict:
     if not USERS_FILE.exists(): return {}
     with USERS_FILE.open("r") as f:

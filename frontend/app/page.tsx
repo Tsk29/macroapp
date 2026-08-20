@@ -262,30 +262,32 @@ export default function Home() {
   async function handleBarcodeScanned(decodedText: string) {
     setIsScanning(false);
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
-      const data = await res.json();
-      if (data.status === 1 && data.product) {
-        const p = data.product;
-        const name = p.product_name || 'Unknown Food';
-        const n = p.nutriments || {};
-        const c = n['energy-kcal_100g'] || 0;
-        const pr = n['proteins_100g'] || 0;
-        const cb = n['carbohydrates_100g'] || 0;
-        const f = n['fat_100g'] || 0;
-        
-        setBaseMacros({c, p:pr, cb, f});
-        setAmountEaten(100);
-        setCustomFood(prev => ({
-          ...prev,
-          name: name,
-          calories: Math.round(c),
-          protein: Math.round(pr),
-          carbs: Math.round(cb),
-          fat: Math.round(f)
-        }));
-      } else {
-        alert('Product not found in Open Food Facts database.');
+      const res = await fetch(`http://localhost:8000/scan_barcode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ barcode: decodedText })
+      });
+      if (!res.ok) {
+        alert('Product not found or error fetching barcode data.');
+        return;
       }
+      const data = await res.json();
+      
+      const c = data.calories || 0;
+      const pr = data.protein || 0;
+      const cb = data.carbs || 0;
+      const f = data.fat || 0;
+      
+      setBaseMacros({c, p:pr, cb, f});
+      setAmountEaten(100);
+      setCustomFood(prev => ({
+        ...prev,
+        name: data.name || 'Unknown Food',
+        calories: Math.round(c),
+        protein: Math.round(pr),
+        carbs: Math.round(cb),
+        fat: Math.round(f)
+      }));
     } catch (e) {
       alert('Error fetching barcode data.');
     }
@@ -496,7 +498,7 @@ export default function Home() {
     if (pantryItems.length === 0) return;
     const payload = {
       user_prompt: '',
-      mode: 'zero_waste',
+      mode: 'zero_waste' as const,
       meal_type: mealType,
       cuisine_preference: selectedCuisines,
       target_calories: targetCalories,
