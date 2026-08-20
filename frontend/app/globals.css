@@ -4,6 +4,7 @@
 @tailwind utilities;
 
 :root {
+  --bg-gradient: linear-gradient(160deg, #eef7f1 0%, #d8ecdf 40%, #c5e1cf 100%);
   --green-900: #1a2e1f;
   --green-800: #1f3a26;
   --green-700: #2d5536;
@@ -16,9 +17,32 @@
   --green-50:  #eef7f1;
   --sage:      #8fa89a;
   --cream:     #f7f6f2;
-  --card-bg:   #ffffff;
+  --card-bg:   rgba(255,255,255,0.72);
+  --card-border: rgba(255,255,255,0.85);
   --text-main: #1a2518;
   --text-sub:  #5a6e5e;
+  --shadow-color: rgba(50,100,60,0.10);
+}
+
+.dark {
+  --bg-gradient: linear-gradient(160deg, #0f1711 0%, #17241a 40%, #111a14 100%);
+  --green-900: #0f1711;
+  --green-800: #152218;
+  --green-700: #1f3a26;
+  --green-600: #2d5536;
+  --green-500: #39ff14;
+  --green-400: #57ff38;
+  --green-300: #7aff61;
+  --green-200: #9eff8a;
+  --green-100: #c2ffb5;
+  --green-50:  #e5ffde;
+  --sage:      #7c9987;
+  --cream:     #17241a;
+  --card-bg:   rgba(20,30,22,0.75);
+  --card-border: rgba(57,255,20,0.15);
+  --text-main: #eef7f1;
+  --text-sub:  #a8d9b4;
+  --shadow-color: rgba(57,255,20,0.15);
 }
 
 * {
@@ -29,7 +53,7 @@ html, body {
   margin: 0;
   padding: 0;
   min-height: 100vh;
-  background: linear-gradient(160deg, #eef7f1 0%, #d8ecdf 40%, #c5e1cf 100%);
+  background: var(--bg-gradient);
   font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
   color: var(--text-main);
 }
@@ -54,12 +78,12 @@ input, textarea, select {
 
 /* ── Glassmorphism card ── */
 .glass-card {
-  background: rgba(255,255,255,0.72);
+  background: var(--card-bg);
   backdrop-filter: blur(20px) saturate(1.6);
   -webkit-backdrop-filter: blur(20px) saturate(1.6);
-  border: 1px solid rgba(255,255,255,0.85);
+  border: 1px solid var(--card-border);
   border-radius: 24px;
-  box-shadow: 0 4px 32px 0 rgba(50,100,60,0.10), 0 1px 4px 0 rgba(50,100,60,0.06);
+  box-shadow: 0 4px 32px 0 var(--shadow-color), 0 1px 4px 0 var(--shadow-color);
 }
 
 .glass-card-dark {
@@ -85,10 +109,10 @@ input, textarea, select {
 }
 
 .pill-btn-green {
-  background: linear-gradient(135deg, #2d5536 0%, #4a8856 100%);
+  background: linear-gradient(135deg, var(--green-700) 0%, var(--green-500) 100%);
   color: #fff;
   padding: 14px 28px;
-  box-shadow: 0 4px 20px rgba(45,85,54,0.35);
+  box-shadow: 0 4px 20px var(--shadow-color);
 }
 .pill-btn-green:hover {
   transform: translateY(-2px);

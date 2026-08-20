@@ -48,6 +48,7 @@ class SubmitPayload(BaseModel):
     target_carbs: int = 0
     target_fat: int = 0
     ingredients: list[IngredientInput] = Field(default_factory=list)
+    pantry_items: list[str] = Field(default_factory=list)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -78,6 +79,7 @@ async def submit_api(payload: SubmitPayload) -> AppState:
         target_carbs=payload.target_carbs,
         target_fat=payload.target_fat,
         ingredients=payload.ingredients,
+        pantry_items=payload.pantry_items,
     )
     final_state = await run_workflow(state)
     return final_state
@@ -95,22 +97,18 @@ async def generate_api(payload: SubmitPayload) -> AppState:
         target_carbs=payload.target_carbs,
         target_fat=payload.target_fat,
         ingredients=payload.ingredients,
+        pantry_items=payload.pantry_items,
     )
     final_state = await run_workflow(state)
     return final_state
 
-@app.post("/parse_pantry_image")
-async def parse_pantry_image(upload: UploadFile = File(...)):
-    import base64
-    file_extension = Path(upload.filename).suffix.lower()
-    if file_extension not in {".png", ".jpg", ".jpeg", ".webp"}:
-        raise HTTPException(status_code=400, detail="Unsupported image format.")
-    
-    contents = await upload.read()
-    image_base64 = base64.b64encode(contents).decode("utf-8")
-    
-    from nodes import parse_image_node
-    ingredients = await parse_image_node(image_base64)
+class ParsePantryVoiceRequest(BaseModel):
+    text: str
+
+@app.post("/parse_pantry_voice")
+async def parse_pantry_voice(req: ParsePantryVoiceRequest):
+    from nodes import parse_voice_node
+    ingredients = await parse_voice_node(req.text)
     return [ing.model_dump() for ing in ingredients]
 
 @app.post("/submit", response_class=HTMLResponse)
@@ -199,15 +197,42 @@ async def ai_swap(req: SwapRequest) -> AppState:
 
     cuisine = req.cuisine_preference[0] if req.cuisine_preference else "Mediterranean"
     swap_ingredients = req.recipe.ingredients or []
+    meal_type_used = req.meal_type or req.recipe.meal_type or "Lunch"
+
+    m_type_lower = meal_type_used.lower()
+    scale = 0.35
+    if "breakfast" in m_type_lower:
+        scale = 0.25
+    elif "lunch" in m_type_lower:
+        scale = 0.35
+    elif "dinner" in m_type_lower:
+        scale = 0.30
+    else:
+        scale = 0.10
+
+    scaled_calories = int(req.target_calories * scale)
+    scaled_protein = int(req.target_protein * scale)
+    scaled_carbs = int(req.target_carbs * scale)
+    scaled_fat = int(req.target_fat * scale)
+
+    reason_lower = req.reason.lower()
+    if "high protein" in reason_lower:
+        scaled_protein = int(scaled_protein * 1.5)
+        scaled_carbs = int(scaled_carbs * 0.8)
+    elif "lower carb" in reason_lower or "low carb" in reason_lower:
+        scaled_carbs = int(scaled_carbs * 0.5)
+        scaled_protein = int(scaled_protein * 1.2)
+        scaled_fat = int(scaled_fat * 1.2)
 
     result = await generate_recipe_llm(
         ingredients=swap_ingredients,
         cuisine=cuisine,
-        meal_type=req.meal_type or req.recipe.meal_type or "Lunch",
-        target_calories=req.target_calories,
-        target_protein=req.target_protein,
-        target_carbs=req.target_carbs,
-        target_fat=req.target_fat,
+        meal_type=meal_type_used,
+        target_calories=scaled_calories,
+        target_protein=scaled_protein,
+        target_carbs=scaled_carbs,
+        target_fat=scaled_fat,
+        swap_reason=req.reason,
     )
 
     # Compute macros
@@ -218,22 +243,21 @@ async def ai_swap(req: SwapRequest) -> AppState:
             totals[k] += m[k]
 
     macro_fit = MacroFit(
-        calories_target=req.target_calories,
+        calories_target=scaled_calories,
         calories_achieved=totals["calories"],
-        calories_delta=totals["calories"] - req.target_calories,
-        protein_target=req.target_protein,
+        calories_delta=totals["calories"] - scaled_calories,
+        protein_target=scaled_protein,
         protein_achieved=totals["protein"],
-        protein_delta=totals["protein"] - req.target_protein,
-        carbs_target=req.target_carbs,
+        protein_delta=totals["protein"] - scaled_protein,
+        carbs_target=scaled_carbs,
         carbs_achieved=totals["carbs"],
-        carbs_delta=totals["carbs"] - req.target_carbs,
-        fat_target=req.target_fat,
+        carbs_delta=totals["carbs"] - scaled_carbs,
+        fat_target=scaled_fat,
         fat_achieved=totals["fat"],
-        fat_delta=totals["fat"] - req.target_fat,
+        fat_delta=totals["fat"] - scaled_fat,
         match_score_percentage=0,
     )
 
-    meal_type_used = req.meal_type or req.recipe.meal_type or "Lunch"
     new_recipe = Recipe(
         name=result.get("title", f"Swapped {cuisine} Meal"),
         title=result.get("title", f"Swapped {cuisine} Meal"),
@@ -417,8 +441,17 @@ async def weekly_summary(username: str, week_start: str) -> dict:
             m.get("macro_fit", {}).get("protein_achieved", 0) for m in day_logs
         )
 
-        cal_pct  = min(round((consumed_cal  / profile.target_calories  * 100) if profile.target_calories  else 0, 1), 100)
-        prot_pct = min(round((consumed_prot / profile.target_protein   * 100) if profile.target_protein   else 0, 1), 100)
+        if profile.target_calories:
+            cal_diff_pct = abs(consumed_cal - profile.target_calories) / profile.target_calories * 100
+            cal_pct = max(0.0, round(100 - cal_diff_pct, 1))
+        else:
+            cal_pct = 0.0
+
+        if profile.target_protein:
+            prot_pct = min(100.0, round((consumed_prot / profile.target_protein) * 100, 1))
+        else:
+            prot_pct = 0.0
+
         # overall compliance = average of the two most important metrics
         compliance = round((cal_pct + prot_pct) / 2, 1)
 

@@ -7,6 +7,7 @@ import {
   Wheat, Droplets, LogOut, BookMarked, RefreshCw, Plus, Minus,
   ShoppingCart, ArrowLeftRight, Leaf, Camera, ChefHat
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNutritionAgent } from './hooks';
 
 const allCuisines = [
@@ -41,6 +42,10 @@ const MEAL_FOOD_EMOJIS: Record<string, string> = {
 };
 
 // ── Week calendar helpers ────────────────────────────────────────────────────
+function toLocalDateString(d: Date) {
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0];
+}
+
 function getWeekDays(today: Date) {
   const days = [];
   const start = new Date(today);
@@ -206,6 +211,8 @@ export default function Home() {
   const [activeDay, setActiveDay] = useState(today.getDate());
 
   const [ingredients, setIngredients] = useState<IngredientInput[]>(() => [createIngredient()]);
+  const [pantryItems, setPantryItems] = useState<string[]>([]);
+  const [newPantryItem, setNewPantryItem] = useState('');
   const [mode, setMode] = useState<'single_meal' | 'full_day'>('single_meal');
   const [mealType, setMealType] = useState('Lunch');
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>(['Mediterranean']);
@@ -216,7 +223,7 @@ export default function Home() {
 
   const {
     state, isLoading, error,
-    generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals,
+    generateRecipe, parsePantryVoice, saveMeal, fetchSavedMeals,
     login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap,
     estimateCustomFood,
   } = useNutritionAgent();
@@ -242,6 +249,100 @@ export default function Home() {
   const [customFoodQuery, setCustomFoodQuery] = useState('');
   const [customFood, setCustomFood]           = useState({ name: '', meal_type: 'Snack', calories: 0, protein: 0, carbs: 0, fat: 0 });
   const [isEstimating, setIsEstimating]       = useState(false);
+  const [isListeningPantry, setIsListeningPantry] = useState(false);
+  const [isListeningCustom, setIsListeningCustom] = useState(false);
+  const [isDarkMode, setIsDarkMode]           = useState(false);
+  const [showOnboarding, setShowOnboarding]   = useState(false);
+  const [onboardingData, setOnboardingData]   = useState({ weight: 70, goal: 'maintain', activity: 'light' });
+
+  const [isScanning, setIsScanning]           = useState(false);
+  const [amountEaten, setAmountEaten]         = useState<number | ''>(100);
+  const [baseMacros, setBaseMacros]           = useState<{c:number, p:number, cb:number, f:number} | null>(null);
+
+  async function handleBarcodeScanned(decodedText: string) {
+    setIsScanning(false);
+    try {
+      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${decodedText}.json`);
+      const data = await res.json();
+      if (data.status === 1 && data.product) {
+        const p = data.product;
+        const name = p.product_name || 'Unknown Food';
+        const n = p.nutriments || {};
+        const c = n['energy-kcal_100g'] || 0;
+        const pr = n['proteins_100g'] || 0;
+        const cb = n['carbohydrates_100g'] || 0;
+        const f = n['fat_100g'] || 0;
+        
+        setBaseMacros({c, p:pr, cb, f});
+        setAmountEaten(100);
+        setCustomFood(prev => ({
+          ...prev,
+          name: name,
+          calories: Math.round(c),
+          protein: Math.round(pr),
+          carbs: Math.round(cb),
+          fat: Math.round(f)
+        }));
+      } else {
+        alert('Product not found in Open Food Facts database.');
+      }
+    } catch (e) {
+      alert('Error fetching barcode data.');
+    }
+  }
+
+  useEffect(() => {
+    if (baseMacros && amountEaten !== '') {
+      const scale = (amountEaten as number) / 100;
+      setCustomFood(prev => ({
+        ...prev,
+        calories: Math.round(baseMacros.c * scale),
+        protein: Math.round(baseMacros.p * scale),
+        carbs: Math.round(baseMacros.cb * scale),
+        fat: Math.round(baseMacros.f * scale),
+      }));
+    }
+  }, [amountEaten, baseMacros]);
+
+  useEffect(() => {
+    let scanner: any;
+    if (isScanning) {
+      const { Html5QrcodeScanner } = require('html5-qrcode');
+      scanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+      scanner.render((text: string) => {
+        scanner.clear();
+        setIsScanning(false);
+        handleBarcodeScanned(text);
+      }, (err: any) => {});
+    }
+    return () => {
+      if (scanner) {
+        try { scanner.clear(); } catch(e) {}
+      }
+    };
+  }, [isScanning]);
+
+  function calculateMacros() {
+    let tdee = onboardingData.weight * 22;
+    if (onboardingData.activity === 'sedentary') tdee *= 1.2;
+    if (onboardingData.activity === 'light') tdee *= 1.375;
+    if (onboardingData.activity === 'active') tdee *= 1.55;
+
+    let target = tdee;
+    if (onboardingData.goal === 'cut') target -= 500;
+    if (onboardingData.goal === 'bulk') target += 500;
+    target = Math.round(target / 10) * 10;
+    
+    const protein = Math.round(onboardingData.weight * 2);
+    const fat = Math.round(onboardingData.weight * 0.8);
+    const carbs = Math.max(0, Math.round((target - (protein * 4) - (fat * 9)) / 4));
+
+    setTargetCalories(target);
+    setTargetProtein(protein);
+    setTargetFat(fat);
+    setTargetCarbs(carbs);
+    setShowOnboarding(false);
+  }
 
   const meals = useMemo(() => {
     if (mode === 'full_day') return state?.meal_plan?.meals ?? [];
@@ -288,7 +389,7 @@ export default function Home() {
     };
   }, [dailySummary]);
 
-  const getTodayString = () => new Date().toISOString().split('T')[0];
+  const getTodayString = () => toLocalDateString(new Date());
 
   async function handleEstimateFood() {
     if (!customFoodQuery.trim()) return;
@@ -354,7 +455,7 @@ export default function Home() {
       const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
       const monday = new Date(now);
       monday.setDate(now.getDate() + diffToMonday);
-      const weekStart = monday.toISOString().split('T')[0];
+      const weekStart = toLocalDateString(monday);
       fetchWeeklySummary(userProfile.username, weekStart).then(d => {
         if (d?.days) setWeeklyData(d.days);
       });
@@ -366,20 +467,81 @@ export default function Home() {
     if (!userProfile) return;
     const d = weekDays.find(d => d.getDate() === activeDay);
     if (!d) return;
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = toLocalDateString(d);
     fetchDailySummary(userProfile.username, dateStr).then(setDailySummary);
   }, [activeDay]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
-  async function handleParseImage() {
-    if (!selectedImage) return;
-    const parsed = await parsePantryImage(selectedImage);
-    if (!parsed || !Array.isArray(parsed)) return;
-    setIngredients(cur => [...cur, ...parsed.map((i: any) => ({
-      id: i.id || createIngredient().id, name: i.name || '', amount: i.amount ?? 0, unit: i.unit || 'g',
-    }))]);
-    setSelectedImage(null);
-  }
+  const handleVoicePantry = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert('Speech recognition not supported in your browser.');
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = 'en-US';
+    rec.onstart = () => setIsListeningPantry(true);
+    rec.onend = () => setIsListeningPantry(false);
+    rec.onresult = async (e: any) => {
+      const text = e.results[0][0].transcript;
+      const parsed = await parsePantryVoice(text);
+      if (!parsed || !Array.isArray(parsed)) return;
+      setIngredients(cur => [...cur, ...parsed.map((i: any) => ({
+        id: i.id || createIngredient().id, name: i.name || '', amount: i.amount ?? 0, unit: i.unit || 'g',
+      }))]);
+    };
+    rec.start();
+  };
+
+  const handleGenerateZeroWaste = async () => {
+    if (pantryItems.length === 0) return;
+    const payload = {
+      user_prompt: '',
+      mode: mode,
+      meal_type: mealType,
+      cuisine_preference: selectedCuisines,
+      target_calories: targetCalories,
+      target_protein: targetProtein,
+      target_carbs: targetCarbs,
+      target_fat: targetFat,
+      ingredients: [],
+      pantry_items: pantryItems
+    };
+    await generateRecipe(payload);
+  };
+
+  const handlePantryVoiceParse = async () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert('Speech recognition not supported in your browser.');
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = 'en-US';
+    rec.onstart = () => setIsListeningPantry(true);
+    rec.onend = () => setIsListeningPantry(false);
+    rec.onresult = async (e: any) => {
+      const text = e.results[0][0].transcript;
+      const parsed = await parsePantryVoice(text);
+      if (!parsed || !Array.isArray(parsed)) return;
+      setPantryItems(cur => [...cur, ...parsed.map((i: any) => i.name)]);
+    };
+    rec.start();
+  };
+
+  const handleVoiceCustom = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return alert('Speech recognition not supported in your browser.');
+    const rec = new SpeechRecognition();
+    rec.continuous = false;
+    rec.interimResults = false;
+    rec.lang = 'en-US';
+    rec.onstart = () => setIsListeningCustom(true);
+    rec.onend = () => setIsListeningCustom(false);
+    rec.onresult = (e: any) => {
+      const text = e.results[0][0].transcript;
+      setCustomFoodQuery(text);
+    };
+    rec.start();
+  };
 
   async function handleLogin(u: string, p: string) {
     if (!u.trim() || !p.trim()) return;
@@ -408,7 +570,7 @@ export default function Home() {
     if (result) {
       setLoggedStatus(prev => ({ ...prev, [recipeToLog.name]: true }));
       const d = weekDays.find(d => d.getDate() === activeDay);
-      const dateStr = d ? d.toISOString().split('T')[0] : getTodayString();
+      const dateStr = d ? toLocalDateString(d) : getTodayString();
       const newSummary = await fetchDailySummary(userProfile.username, dateStr);
       setDailySummary(newSummary);
     }
@@ -416,14 +578,19 @@ export default function Home() {
   }
 
   async function handleGenerate() {
-    const ac = dailySummary ? dailySummary.remaining.calories : targetCalories;
-    const ap = dailySummary ? dailySummary.remaining.protein  : targetProtein;
-    const ach = dailySummary ? dailySummary.remaining.carbs   : targetCarbs;
-    const af = dailySummary ? dailySummary.remaining.fat      : targetFat;
+    const validIngredients = ingredients.filter(i => i.name.trim() !== '');
+    setIngredients(validIngredients.length > 0 ? validIngredients : [createIngredient()]);
+    
+    const ac = targetCalories;
+    const ap = targetProtein;
+    const ach = targetCarbs;
+    const af = targetFat;
+    
+    const finalIngredients = validIngredients.length > 0 ? validIngredients : [];
     await generateRecipe({
-      user_prompt: ingredients.map(i => i.name).filter(Boolean).join(', '),
+      user_prompt: finalIngredients.map(i => i.name).filter(Boolean).join(', '),
       mode, meal_type: mealType, cuisine_preference: selectedCuisines,
-      target_calories: ac, target_protein: ap, target_carbs: ach, target_fat: af, ingredients,
+      target_calories: ac, target_protein: ap, target_carbs: ach, target_fat: af, ingredients: finalIngredients,
     });
     setLoggedStatus({});
     setSavedStatus({});
@@ -440,10 +607,10 @@ export default function Home() {
       reason: swapReason,
       cuisine_preference: selectedCuisines,
       meal_type: mealType,
-      target_calories: dailySummary ? dailySummary.remaining.calories : targetCalories,
-      target_protein:  dailySummary ? dailySummary.remaining.protein  : targetProtein,
-      target_carbs:    dailySummary ? dailySummary.remaining.carbs    : targetCarbs,
-      target_fat:      dailySummary ? dailySummary.remaining.fat      : targetFat,
+      target_calories: targetCalories,
+      target_protein:  targetProtein,
+      target_carbs:    targetCarbs,
+      target_fat:      targetFat,
     });
     setIsSwapping(false);
     setSavedStatus({});
@@ -516,7 +683,7 @@ export default function Home() {
 
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(160deg, #eef7f1 0%, #c8e2d2 60%, #b3d6bf 100%)' }}>
+    <div className={isDarkMode ? 'dark' : ''} style={{ minHeight: '100vh', background: 'var(--bg-gradient)', transition: 'background 0.3s ease' }}>
 
       {/* ── Header ── */}
       <header className="glass-card mx-auto mt-4 flex max-w-7xl items-center justify-between px-6 py-3"
@@ -548,6 +715,9 @@ export default function Home() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <button onClick={() => setIsDarkMode(d => !d)} className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 12px' }}>
+            {isDarkMode ? '🌙' : '☀️'}
+          </button>
           <button onClick={async () => { setIsSavedMealsOpen(true); const m = await fetchSavedMeals(); setSavedMeals(m); }}
             className="pill-btn pill-btn-outline text-sm" style={{ padding: '8px 16px' }}>
             <BookMarked className="h-3.5 w-3.5" /> Saved
@@ -714,11 +884,7 @@ export default function Home() {
                     ))}
                   </div>
 
-                  <button onClick={handleDailyReweCart}
-                    className="pill-btn w-full"
-                    style={{ background: 'linear-gradient(135deg, var(--green-600), var(--green-700))', color: 'white', padding: '10px', border: 'none' }}>
-                    {dailyCartCopied ? <><CheckCircle2 className="h-4 w-4" /> Copied! Opening REWE…</> : <><ShoppingCart className="h-4 w-4" /> 🛒 Buy All on REWE</>}
-                  </button>
+                  {/* REWE buttons removed */}
                 </div>
               )}
             </div>
@@ -778,11 +944,7 @@ export default function Home() {
                         <span>Total from {String(receipt.store ?? 'Rewe')}</span>
                         <span>€{receipt.total.toFixed(2)}</span>
                       </div>
-                      {/* ── One-click REWE Cart ── */}
-                      <button onClick={handleReweCart}
-                        style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, width:'100%', padding:'10px 14px', background: cartCopied ? 'linear-gradient(135deg,#0ea5e9,#0284c7)' : 'rgba(14,165,233,0.12)', border:'1.5px solid rgba(14,165,233,0.30)', borderRadius:14, cursor:'pointer', fontWeight:600, fontSize:13, color: cartCopied ? '#fff' : '#0369a1', transition:'all 0.3s' }}>
-                        {cartCopied ? <><CheckCircle2 className="h-4 w-4" /> Copied! Opening REWE…</> : <><ShoppingCart className="h-4 w-4" /> 🛒 One-Click REWE Cart</>}
-                      </button>
+                      {/* REWE buttons removed */}
                     </div>
                   )}
                 </div>
@@ -829,6 +991,70 @@ export default function Home() {
                 </div>
               </div>
             )}
+
+            {/* Pantry Intelligence */}
+            <div className="glass-card p-5 mb-4 fade-up">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="section-label mb-1">Zero Waste Mode</div>
+                  <h2 className="text-xl font-bold" style={{ color: 'var(--text-main)' }}>My Pantry</h2>
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)' }}>
+                  <ShoppingCart className="h-5 w-5 text-white" />
+                </div>
+              </div>
+              
+              <div className="flex flex-wrap gap-2 mb-4">
+                {pantryItems.map((item, idx) => (
+                  <span key={idx} className="badge" style={{ background: 'rgba(245,158,11,0.15)', color: '#b45309', padding: '6px 12px', fontSize: 13 }}>
+                    {item}
+                    <button onClick={() => setPantryItems(prev => prev.filter((_, i) => i !== idx))} style={{ marginLeft: 6, color: '#b45309', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  className="w-full form-input" 
+                  placeholder="Add item (e.g., half a cabbage, 2 eggs)" 
+                  value={newPantryItem}
+                  onChange={(e) => setNewPantryItem(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newPantryItem.trim()) {
+                      setPantryItems(prev => [...prev, newPantryItem.trim()]);
+                      setNewPantryItem('');
+                    }
+                  }}
+                  style={{ padding: '10px 14px', borderRadius: '12px', border: '1px solid rgba(45,85,54,0.15)', background: 'rgba(255,255,255,0.7)', outline: 'none' }}
+                />
+                <button 
+                  className="pill-btn" 
+                  style={{ background: '#f59e0b', color: '#fff', border: 'none', padding: '0 16px', borderRadius: 12 }}
+                  onClick={() => {
+                    if (newPantryItem.trim()) {
+                      setPantryItems(prev => [...prev, newPantryItem.trim()]);
+                      setNewPantryItem('');
+                    }
+                  }}>
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              
+              {pantryItems.length > 0 && (
+                <button 
+                  className="pill-btn w-full mt-4 flex items-center justify-center gap-2" 
+                  disabled={isLoading}
+                  style={{ background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', border: 'none', padding: '12px', borderRadius: 14, fontWeight: 700 }}
+                  onClick={handleGenerateZeroWaste}>
+                  {isLoading ? <Loader2 className="h-4 w-4 spin" /> : <Sparkles className="h-4 w-4" />}
+                  Generate Zero Waste Meal
+                </button>
+              )}
+            </div>
 
             {/* Build tab */}
             <div className="glass-card p-5">
@@ -925,20 +1151,24 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* Pantry image */}
+              {/* Voice Pantry logging */}
               <div className="mb-4">
-                <div className="section-label mb-2">Scan Pantry Photo</div>
+                <div className="section-label mb-2">Voice Log Pantry</div>
                 <div className="flex gap-3 items-end">
-                  <label className="flex-1 flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed py-4 cursor-pointer"
-                    style={{ borderColor:'rgba(45,85,54,0.25)', background:'rgba(255,255,255,0.5)' }}>
-                    <UploadCloud className="h-5 w-5" style={{ color:'var(--green-600)' }} />
-                    <span className="text-xs" style={{ color:'var(--sage)' }}>{selectedImage ? selectedImage.name : 'PNG, JPG, WEBP'}</span>
-                    <input type="file" accept="image/*" className="hidden"
-                      onChange={e => setSelectedImage(e.target.files?.[0] ?? null)} />
-                  </label>
-                  <button className="pill-btn pill-btn-outline text-sm" style={{ padding:'10px 16px' }}
-                    disabled={!selectedImage || isLoading} onClick={handleParseImage}>
-                    Parse
+                  <button className="flex-1 flex flex-col items-center gap-2 rounded-2xl border-2 border-dashed py-4 cursor-pointer hover:bg-green-50 transition-colors"
+                    onClick={handleVoicePantry} disabled={isListeningPantry || isLoading}
+                    style={{ borderColor: isListeningPantry ? 'var(--green-600)' : 'rgba(45,85,54,0.25)', background: isListeningPantry ? 'rgba(45,85,54,0.1)' : 'rgba(255,255,255,0.5)' }}>
+                    {isListeningPantry ? (
+                      <span className="flex items-center gap-2" style={{ color: 'var(--green-600)', fontWeight: 600 }}>
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> Listening...
+                      </span>
+                    ) : (
+                      <>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--green-600)' }}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                        <span className="text-xs font-semibold" style={{ color:'var(--text)' }}>Tap to speak your ingredients</span>
+                        <span className="text-xs" style={{ color:'var(--sage)' }}>"I have 100g chicken and some rice"</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -947,10 +1177,15 @@ export default function Home() {
               <div className="mb-5">
                 <div className="flex items-center justify-between mb-2">
                   <div className="section-label">Daily Macro Targets</div>
-                  <button onClick={handleUpdateProfile} disabled={isLoading}
-                    className="text-xs font-semibold" style={{ color:'var(--green-600)', background:'none', border:'none', cursor:'pointer' }}>
-                    {isLoading ? 'Saving…' : 'Save Profile'}
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setShowOnboarding(true)} className="text-xs font-semibold" style={{ color:'var(--green-600)', background:'none', border:'none', cursor:'pointer' }}>
+                      Calculate Macros
+                    </button>
+                    <button onClick={handleUpdateProfile} disabled={isLoading}
+                      className="text-xs font-semibold" style={{ color:'var(--green-600)', background:'none', border:'none', cursor:'pointer' }}>
+                      {isLoading ? 'Saving…' : 'Save Profile'}
+                    </button>
+                  </div>
                 </div>
                 <div className="grid gap-3" style={{ gridTemplateColumns:'1fr 1fr' }}>
                   {[
@@ -979,8 +1214,9 @@ export default function Home() {
             </div>
 
             {/* ── Recipe / Meal Plan Result ── */}
+            <AnimatePresence mode="wait">
             {meals.length > 0 && (
-              <div className="glass-card p-5 fade-up">
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="glass-card p-5">
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <div className="section-label mb-1">{mode === 'full_day' ? 'Daily Meal Plan' : 'The Recipe'}</div>
@@ -1156,8 +1392,9 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
 
             {/* Grocery Receipt card moved to left sidebar */}
 
@@ -1256,18 +1493,30 @@ export default function Home() {
 
             <div className="mb-4">
               <div className="section-label mb-2">Describe what you ate</div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 items-center">
                 <input className="field flex-1" placeholder="e.g. 3 rice cakes with 15g honey" value={customFoodQuery}
                   onChange={e => setCustomFoodQuery(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleEstimateFood()} />
+                <button className="pill-btn pill-btn-outline" onClick={handleVoiceCustom} disabled={isListeningCustom} style={{ padding: '9px', flexShrink: 0, height: '42px', width: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isListeningCustom ? <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-sub)' }}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>}
+                </button>
+                <button className="pill-btn pill-btn-outline" onClick={() => setIsScanning(s => !s)} style={{ padding: '9px', flexShrink: 0, height: '42px', width: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Camera className="h-4 w-4" style={{ color: 'var(--text-sub)' }} />
+                </button>
                 <button onClick={handleEstimateFood} disabled={isEstimating || !customFoodQuery.trim()}
-                  className="pill-btn pill-btn-green" style={{ padding: '9px 16px', flexShrink: 0 }}>
+                  className="pill-btn pill-btn-green" style={{ padding: '9px 16px', flexShrink: 0, height: '42px' }}>
                   {isEstimating ? <Loader2 className="h-4 w-4 spin" /> : <Sparkles className="h-4 w-4" />}
                   {isEstimating ? '' : 'Estimate'}
                 </button>
               </div>
               {isEstimating && <p className="text-xs mt-1" style={{ color: 'var(--sage)' }}>AI is estimating nutrition…</p>}
             </div>
+
+            {isScanning && (
+              <div className="mb-4">
+                <div id="reader" style={{ width: '100%', borderRadius: 16, overflow: 'hidden' }}></div>
+              </div>
+            )}
 
             <div className="mb-4">
               <div className="section-label mb-2">Food Details</div>
@@ -1285,6 +1534,13 @@ export default function Home() {
                       {['Breakfast','Lunch','Dinner','Snack','Custom'].map(t => <option key={t}>{t}</option>)}
                     </select>
                   </div>
+                  {baseMacros && (
+                    <div style={{ width: 90 }}>
+                      <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Amount (g)</label>
+                      <input type="number" className="field" value={amountEaten}
+                        onChange={e => setAmountEaten(e.target.value === '' ? '' : Number(e.target.value))} />
+                    </div>
+                  )}
                 </div>
                 <div className="grid grid-cols-4 gap-2">
                   {[
@@ -1307,6 +1563,58 @@ export default function Home() {
             <button onClick={handleLogCustomFood} disabled={!customFood.name}
               className="pill-btn pill-btn-green w-full" style={{ padding: '12px' }}>
               <CheckCircle2 className="h-4 w-4" /> Log to Diary
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Onboarding Macro Calculator Modal ── */}
+      {showOnboarding && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(26,46,31,0.55)', backdropFilter: 'blur(10px)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShowOnboarding(false); }}>
+          <div className="glass-card fade-up w-full max-w-md p-7">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <div className="section-label mb-0.5">Setup</div>
+                <h2 className="text-lg font-bold" style={{ color: 'var(--text-main)' }}>Calculate Macros</h2>
+              </div>
+              <button onClick={() => setShowOnboarding(false)}
+                style={{ background: 'rgba(239,68,68,0.10)', border: 'none', borderRadius: 999, padding: '8px', cursor: 'pointer', color: '#991b1b' }}>
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4 mb-6">
+              <div>
+                <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Weight (kg)</label>
+                <input type="number" className="field" value={onboardingData.weight}
+                  onChange={e => setOnboardingData({ ...onboardingData, weight: Number(e.target.value) })} />
+              </div>
+              
+              <div>
+                <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Activity Level</label>
+                <select className="field" value={onboardingData.activity}
+                  onChange={e => setOnboardingData({ ...onboardingData, activity: e.target.value })}>
+                  <option value="sedentary">Sedentary (Little to no exercise)</option>
+                  <option value="light">Lightly Active (Exercise 1-3 days/wk)</option>
+                  <option value="active">Active (Exercise 3-5 days/wk)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium mb-1 block" style={{ color: 'var(--text-sub)' }}>Goal</label>
+                <select className="field" value={onboardingData.goal}
+                  onChange={e => setOnboardingData({ ...onboardingData, goal: e.target.value })}>
+                  <option value="cut">Lose Weight (Cut)</option>
+                  <option value="maintain">Maintain Weight</option>
+                  <option value="bulk">Gain Muscle (Bulk)</option>
+                </select>
+              </div>
+            </div>
+
+            <button onClick={calculateMacros} className="pill-btn pill-btn-green w-full">
+              Calculate & Set Targets
             </button>
           </div>
         </div>

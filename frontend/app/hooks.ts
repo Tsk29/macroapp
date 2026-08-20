@@ -17,6 +17,7 @@ export function useNutritionAgent() {
     target_carbs: number;
     target_fat: number;
     ingredients: Array<{ id: string; name: string; amount: number; unit: string }>;
+    pantry_items?: string[];
   }) {
     setIsLoading(true);
     setError(null);
@@ -47,21 +48,19 @@ export function useNutritionAgent() {
     }
   }
 
-  async function parsePantryImage(file: File) {
+  async function parsePantryVoice(text: string) {
     setIsLoading(true);
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('upload', file);
-
-      const response = await fetch('http://localhost:8001/parse_pantry_image', {
+      const response = await fetch('http://localhost:8001/parse_pantry_voice', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to parse image: ${response.status}`);
+        throw new Error(`Failed to parse voice: ${response.status}`);
       }
 
       const ingredients = await response.json();
@@ -70,7 +69,7 @@ export function useNutritionAgent() {
         id: `ing-${Date.now()}-${i}`
       }));
     } catch (err) {
-      console.error('Image parsing error:', err);
+      console.error('Voice parsing error:', err);
       setError(err instanceof Error ? err.message : 'Unexpected error');
       return null;
     } finally {
@@ -264,5 +263,5 @@ export function useNutritionAgent() {
     }
   }
 
-  return { state, isLoading, error, generateRecipe, parsePantryImage, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap, estimateCustomFood };
+  return { state, isLoading, error, generateRecipe, parsePantryVoice, saveMeal, fetchSavedMeals, login, register, updateProfile, logDailyMeal, fetchDailySummary, fetchWeeklySummary, aiSwap, estimateCustomFood };
 }

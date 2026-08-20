@@ -5,7 +5,7 @@ import asyncio
 from dotenv import load_dotenv
 
 from schemas import AppState
-from nodes import chef_node, scraper_node, vision_node, parse_image_node
+from nodes import chef_node, scraper_node, vision_node, parse_voice_node
 
 load_dotenv(".env")
 

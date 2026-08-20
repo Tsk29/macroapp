@@ -99,7 +99,7 @@ Return a JSON object with exactly these keys:
     try:
         client = genai.Client()
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-3.6-flash',
             contents=user_msg,
             config=types.GenerateContentConfig(
                 system_instruction=system_msg,
@@ -361,6 +361,66 @@ def build_full_day_plan(state: AppState, recipes: list[Recipe]) -> tuple[list[Re
 
 
 
+def fetch_recipe_research(ingredient_names: list[str], cuisine: str) -> str:
+    import urllib.request
+    import json
+    import urllib.parse
+    
+    # Find the main ingredient (chicken, beef, tofu, rice, fish, etc.)
+    main_ingredient = None
+    for ing in ingredient_names:
+        ing_lower = ing.lower()
+        if any(k in ing_lower for k in ["chicken", "beef", "pork", "fish", "tofu", "shrimp", "salmon", "turkey", "lamb", "rice", "pasta", "potato"]):
+            for k in ["chicken", "beef", "pork", "fish", "tofu", "shrimp", "salmon", "turkey", "lamb", "rice", "pasta", "potato"]:
+                if k in ing_lower:
+                    main_ingredient = k
+                    break
+            if main_ingredient:
+                break
+    
+    if not main_ingredient and ingredient_names:
+        main_ingredient = ingredient_names[0].split()[0]
+        
+    if not main_ingredient:
+        return ""
+        
+    try:
+        url = f"https://www.themealdb.com/api/json/v1/1/filter.php?i={urllib.parse.quote(main_ingredient)}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as response:
+            data = json.loads(response.read().decode())
+            meals = data.get("meals", [])
+            if not meals:
+                return ""
+            
+            matched_meals = []
+            for meal in meals:
+                meal_id = meal.get("idMeal")
+                lookup_url = f"https://www.themealdb.com/api/json/v1/1/lookup.php?i={meal_id}"
+                l_req = urllib.request.Request(lookup_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(l_req, timeout=3) as l_resp:
+                    l_data = json.loads(l_resp.read().decode())
+                    meal_details = l_data.get("meals", [])[0]
+                    meal_area = meal_details.get("strArea", "").lower()
+                    
+                    if cuisine.lower() in meal_area or meal_area in cuisine.lower() or (cuisine.lower() == "mediterranean" and meal_area in ["greek", "italian", "spanish"]):
+                        matched_meals.append(meal_details)
+                    elif len(matched_meals) < 2:
+                        matched_meals.append(meal_details)
+                        
+                    if len(matched_meals) >= 2:
+                        break
+            
+            research_text = ""
+            for meal in matched_meals:
+                research_text += f"REF DISH: {meal.get('strMeal')}\n"
+                research_text += f"Cuisine/Area: {meal.get('strArea')}\n"
+                research_text += f"Instructions: {meal.get('strInstructions')}\n\n"
+            return research_text
+    except Exception as e:
+        print("Recipe API research error:", e)
+        return ""
+
 async def generate_recipe_llm(
     ingredients: list[IngredientInput],
     cuisine: str,
@@ -369,6 +429,8 @@ async def generate_recipe_llm(
     target_protein: int = 0,
     target_carbs: int = 0,
     target_fat: int = 0,
+    swap_reason: str = None,
+    is_zero_waste: bool = False,
 ) -> dict:
     import re as _re
     import traceback as _tb
@@ -376,7 +438,7 @@ async def generate_recipe_llm(
         return {"title": f"{cuisine} {meal_type}", "meal_structure": "Single Plate", "instructions": ["Prep ingredients", "Cook", "Serve"]}
 
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-    ingredient_list = ", ".join(f"{i.amount}{i.unit} {i.name}" for i in ingredients)
+    ingredient_list = ", ".join(f"{i.amount}{i.unit} {i.name}" for i in ingredients if i.name.strip())
 
     macro_block = ""
     if target_calories or target_protein:
@@ -386,14 +448,34 @@ TARGET MACROS — hit these numbers with your portion choices:
 Adjust gram weights of ingredients so the TOTAL meal hits these targets.
 Do NOT exceed the calorie target by more than 10%."""
 
-    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object. No markdown, no explanations."
+    swap_block = ""
+    if swap_reason:
+        swap_block = f"""
+AI SWAP REQUEST: Modify the ingredients to satisfy this request: "{swap_reason}". 
+Substitute, add, or remove ingredients as necessary (e.g. swap chicken for tofu if they request vegetarian, swap grains if low carb, etc.). adjust portions to maintain target macros."""
+
+    zero_waste_block = ""
+    if is_zero_waste:
+        zero_waste_block = f"""
+ZERO WASTE MODE: You MUST invent a creative, authentic recipe that prioritizes using up as many of the provided ingredients as possible. 
+These items are in the user's pantry and need to be used before they expire. If absolutely necessary, you may add minimal additional staple ingredients, but keep them to an absolute minimum."""
+
+    raw_research = fetch_recipe_research([i.name for i in ingredients if i.name.strip()], cuisine)
+    research_block = ""
+    if raw_research:
+        research_block = f"\n\nHere is research on authentic recipe styles matching your main ingredient and cuisine:\n{raw_research}\nUse this research to generate a creative, authentic recipe instead of a generic one."
+
+    system_msg = "You are a JSON-only API. Output ONLY a raw JSON object in ENGLISH. All content, including title and instructions, MUST be in English, regardless of cuisine. No markdown, no explanations."
     user_msg = (
-        f"Create a {cuisine} {meal_type} recipe using these ingredients: {ingredient_list}."
-        f"{macro_block}\n\n"
+        f"Create an authentic {cuisine} {meal_type} recipe based on these ingredients: {ingredient_list}."
+        f"CRITICAL: You MUST include and use ALL of the provided ingredients (especially any grains/carbs like rice, and proteins like chicken) in the instructions unless the AI SWAP REQUEST instructs otherwise.\n"
+        f"CRITICAL: The entire JSON response (title, instructions, ingredients list) MUST be written in English. Do NOT output in Italian, Chinese, or any other language.\n"
+        f"{macro_block}{swap_block}{zero_waste_block}{research_block}\n\n"
         "Respond with a JSON object containing exactly these keys:\n"
         '- "title": a creative authentic dish name\n'
         '- "meal_structure": short plating description (e.g. "Main + Side")\n'
         '- "instructions": array of at least 5 highly detailed, step-by-step cooking instructions. Write like a Michelin-star chef giving explicit directions with temperatures, timings, and techniques. Do NOT write short or lazy instructions.\n'
+        '- "ingredients": array of objects with fields "name" (string), "amount" (integer), "unit" (string). This MUST be the finalized, complete list of ingredients for this dish (incorporating any swaps/replacements and extra flavor additions).\n'
         f'- "additional_ingredients": array of extra ingredients YOU MUST add to achieve an authentic {cuisine} flavor profile. Include essential cultural spices, sauces, or herbs (e.g., cumin, soy sauce, garam masala, star anise, ginger) that are not already in the provided ingredients list.\n\n'
         f"CRITICAL: Use authentic {cuisine} spices and techniques. Be specific with temperatures and timings."
     )
@@ -536,6 +618,25 @@ def create_realistic_instructions(ingredients: list[IngredientInput], meal_type:
 
 
 async def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]) -> Recipe:
+    scale = 0.9
+    if state.mode == "single_meal":
+        m_type = (recipe.meal_type or "Lunch").lower()
+        if "breakfast" in m_type:
+            scale = 0.25
+        elif "lunch" in m_type:
+            scale = 0.35
+        elif "dinner" in m_type:
+            scale = 0.30
+        else:
+            scale = 0.10
+
+    required = {
+        "calories": int(state.target_calories * scale),
+        "protein": int(state.target_protein * scale),
+        "carbs": int(state.target_carbs * scale),
+        "fat": int(state.target_fat * scale),
+    }
+
     achieved = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
     for ingredient in recipe.ingredients:
         macros = estimate_macros(ingredient)
@@ -543,13 +644,6 @@ async def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]
         achieved["protein"] += macros["protein"]
         achieved["carbs"] += macros["carbs"]
         achieved["fat"] += macros["fat"]
-
-    required = {
-        "calories": int(state.target_calories * 0.9),
-        "protein": int(state.target_protein * 0.9),
-        "carbs": int(state.target_carbs * 0.9),
-        "fat": int(state.target_fat * 0.9),
-    }
 
     candidate_supplements = [
         IngredientInput(name="olive oil", amount=15, unit="g"),
@@ -590,16 +684,38 @@ async def bridge_macro_gaps(state: AppState, recipe: Recipe, inventory: set[str]
         target_protein=state.target_protein,
         target_carbs=state.target_carbs,
         target_fat=state.target_fat,
+        is_zero_waste=len(state.ingredients) > 0 and len(state.pantry_items) > 0 and set(i.name.strip().lower() for i in state.ingredients).issubset(set(p.strip().lower() for p in state.pantry_items))
     )
     recipe.title = recipe_dict.get("title", recipe.title)
     recipe.meal_structure = recipe_dict.get("meal_structure")
     recipe.instructions = recipe_dict.get("instructions", [])
 
-    additional = recipe_dict.get("additional_ingredients", [])
-    for ing_name in additional:
-        recipe.ingredients.append(IngredientInput(name=ing_name, amount=1, unit="g"))
+    if "ingredients" in recipe_dict and isinstance(recipe_dict["ingredients"], list):
+        parsed_ings = []
+        for ing in recipe_dict["ingredients"]:
+            if isinstance(ing, dict) and ing.get("name"):
+                parsed_ings.append(IngredientInput(
+                    name=ing.get("name"),
+                    amount=int(ing.get("amount", 100)),
+                    unit=ing.get("unit", "g")
+                ))
+        if parsed_ings:
+            recipe.ingredients = parsed_ings
+    else:
+        additional = recipe_dict.get("additional_ingredients", [])
+        for ing_name in additional:
+            recipe.ingredients.append(IngredientInput(name=ing_name, amount=1, unit="g"))
 
-    recipe.macro_fit = build_macro_fit(state, achieved)
+    # Re-calculate final actual macros based on finalized ingredients list
+    final_achieved = {"calories": 0, "protein": 0, "carbs": 0, "fat": 0}
+    for ingredient in recipe.ingredients:
+        macros = estimate_macros(ingredient)
+        final_achieved["calories"] += macros["calories"]
+        final_achieved["protein"] += macros["protein"]
+        final_achieved["carbs"] += macros["carbs"]
+        final_achieved["fat"] += macros["fat"]
+
+    recipe.macro_fit = build_macro_fit(state, final_achieved)
     recipe.missing_ingredients = [
         ingredient.name
         for ingredient in recipe.ingredients
@@ -774,35 +890,25 @@ async def vision_node(state: AppState) -> AppState:
     return state
 
 
-async def parse_image_node(image_base64: str) -> list[IngredientInput]:
-    import base64
+async def parse_voice_node(text: str) -> list[IngredientInput]:
     from google import genai
     from google.genai import types
 
     prompt = (
-        "You are a helpful assistant that extracts raw pantry ingredients from a fridge or pantry image. "
+        "You are a helpful assistant that extracts raw pantry ingredients from a voice transcript. "
         "Estimate their weights/quantities. Ignore cooked leftovers or condiments like ketchup. "
         "Return ONLY a valid JSON array of objects with fields: name, amount, unit. "
-        "For unit, use only 'g', 'ml', or 'whole'. No explanation outside the JSON array."
+        "For unit, use only 'g', 'ml', or 'whole'. No explanation outside the JSON array.\n\n"
+        f"Transcript: {text}"
     )
 
     try:
-        # Initialize GenAI Client using the configured key
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
         g_client = genai.Client(api_key=api_key)
         
-        # Decode base64 image data
-        image_bytes = base64.b64decode(image_base64)
-        
         response = g_client.models.generate_content(
             model='gemini-3.6-flash',
-            contents=[
-                types.Part.from_bytes(
-                    data=image_bytes,
-                    mime_type='image/jpeg'
-                ),
-                prompt
-            ]
+            contents=[prompt]
         )
         output_text = response.text
     except Exception as e:
@@ -864,6 +970,11 @@ async def chef_node(state: AppState) -> AppState:
     if state.user_prompt:
         prompt_items = [item.strip().lower() for item in state.user_prompt.split(",") if item.strip()]
         inventory.update(prompt_items)
+
+    if not exact_ingredient_names and state.pantry_items:
+        # Zero Waste Mode: we have pantry items but no explicit ingredients
+        exact_ingredient_names = [item.strip() for item in state.pantry_items if item.strip()]
+        state.ingredients = [IngredientInput(name=name, amount=100, unit="g") for name in exact_ingredient_names]
 
     if exact_ingredient_names:
         inventory.update(name.lower() for name in exact_ingredient_names)
@@ -973,7 +1084,7 @@ async def chef_node(state: AppState) -> AppState:
 
 
 
-def search_rewe_api(query: str, zip_code: str = "10115") -> dict:
+def search_rewe_api(query: str, zip_code: str = "91052") -> dict:
     """Simulate hitting the REWE undocumented API."""
     try:
         # We attempt a basic HTTP request to a hypothetical endpoint.
